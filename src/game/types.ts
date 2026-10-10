@@ -10,6 +10,16 @@ export type SolidKind =
   | 'piston'
   | 'gate'
   | 'cargo'
+  | 'ladder'
+
+/** Painted car body. Each chunk picks one so neighboring cars do not match. */
+export type CarSkin = 'passenger' | 'cargo' | 'vault' | 'engine'
+
+export interface CarSpan {
+  x: number
+  w: number
+  skin: CarSkin
+}
 
 export type EnemyKind = 'patrol' | 'shooter' | 'drone' | 'shield' | 'dasher' | 'grenadier' | 'heavy' | 'sniper' | 'boss'
 export type BossId = 'mech' | 'conductor' | 'turret' | 'ram' | 'hawk' | 'summit'
@@ -278,6 +288,7 @@ export interface Game {
   ranks: Ranks
   armoryFrom: 'title' | 'next'
   hazards: Hazard[]
+  cars: CarSpan[]
   arena: Arena | null
   arenaLock: boolean
   bossIntro: boolean

@@ -34,7 +34,7 @@ Progress (furthest car, snow line, best score, coins, guns, upgrades, mute) is s
 | Pause | Esc or P | II |
 | Mute | M | Mute |
 
-Dash is a short burst with a cooldown, on the ground or in the air. Hold crouch to shrink your hitbox. A running crouch slides. High security shots pass over a crouch. Low shots have to be jumped. Some gaps between cars are too wide to clear without a dash.
+Dash is a short burst with a cooldown, on the ground or in the air. Hold crouch to shrink your hitbox. A running crouch slides. High security shots pass over a crouch. Low shots have to be jumped. Some gaps between cars are too wide to clear without a dash. Hold Up or the jump button while you overlap a ladder to climb to the roof, and Down to come back to the aisle.
 
 Hold the left mouse button to keep firing, the same way holding J or X does. The charge rifle is the exception: hold to charge, release to fire. Clicks on the on-screen buttons still press those buttons. The touch Fire button is unchanged. Gun cycles the weapons you already own.
 
@@ -61,19 +61,25 @@ Upgrades run three ranks: damage, fire rate, ammo and reload, max health, dash c
 
 ## Levels
 
+Cars are assembled from a library of combo chunks. A chunk is a short hand-built bay that mixes at least two problems: a crawl that opens onto a gap with a drone over it, a plate you shoot while a gunner fires from your side of it, crates stacked on a moving sled with a shield on the landing, a live rail inside a crouch tunnel, a sniper nest you can break through or flank from the roof. Chunks are tagged by difficulty and by which line they belong on. Car 1 stays on the easy set. Later cars add harder tags, and a chunk never repeats the one before it.
+
+Each chunk also paints the car it sits in. Coaches have windows and seats, cargo cars are strapped freight, vaults are dark with gold racks, and engine cars are pipes and a furnace. A seam marks where the interior changes.
+
+The aisle is always a fair route. Ladders (hold Up) reach a roof catwalk that skips some of the aisle and hides a gem. One jump reaches a low step; the roof itself is ladder-only.
+
 ### Night line
 
-Fifteen cars are hand-built and get meaner. From car 6 the yard adds new machines, and their health scales as the cars go on:
+Fifteen cars are ordered from that library and get meaner. From car 6 the yard adds new machines, and their health scales as the cars go on:
 
 - Shield robots block a shot to the plate. Crouch and shoot under it, or hit them from behind.
 - Drones hover and mix their fire.
 - Dashers lunge. Grenadiers lob arcs. Heavies shrug off light rounds. Snipers paint a laser, then fire.
 
-Cars 5, 10, and 15 are bosses (Iron Warden, the Conductor, Loco-Lock) with their own health bars and patterns. A bulkhead seals the far side of every boss room, so a dash or an air dash cannot slip behind them, and the camera stays on the arena once you enter it. After car 15 the night line keeps going, generated from the same knobs, with a boss every five cars. Beating car 15 also opens the snow line.
+Cars 5, 10, and 15 are bosses (Iron Warden, the Conductor, Loco-Lock) with their own health bars and patterns. A bulkhead seals the far side of every boss room, so a dash or an air dash cannot slip behind them, and the camera stays on the arena once you enter it. After car 15 the night line keeps going, still drawn from the chunk library with no immediate repeats, and a boss every five cars. Beating car 15 also opens the snow line.
 
 ### Snow line
 
-The white line is a mountain railway: moving cargo, live rails that pulse, crosswinds on the gaps, ice tunnels, and falling debris. Its bosses are the Glacier Ram, the Whiteout Hawk, and the Summit Breaker, again every five cars, and the same arena seal holds. After car 15 the snow line keeps generating.
+The white line uses the same chunks plus mountain ones: moving cargo, live rails inside tunnels, crosswinds on the gaps, and falling ice sharing a bay with a drone. Its bosses are the Glacier Ram, the Whiteout Hawk, and the Summit Breaker, again every five cars, and the same arena seal holds. After car 15 the snow line keeps assembling from the library.
 
 On the title screen, left and right pick any unlocked car. Night and Snow appear once the snow line is open.
 
