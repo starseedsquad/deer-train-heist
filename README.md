@@ -28,12 +28,14 @@ Progress (furthest car, best score, lifetime haul, mute) is stored in `localStor
 | Jump | Space, W, or Up | Jump |
 | Crouch / slide | Down, S, or C | Crouch (hold) |
 | Dash | Shift or K | Dash |
-| Shoot | J or X | Fire |
+| Shoot | Left click (hold), J, or X | Fire |
 | Reload | R, or automatic when the cylinder is empty | Automatic |
 | Pause | Esc or P | II |
 | Mute | M | Mute |
 
 Dash is a short burst with a cooldown, on the ground or in the air. Hold crouch to shrink your hitbox. A running crouch slides. High security shots pass over a crouch. Low shots have to be jumped. Some gaps between cars are too wide to clear without a dash.
+
+Hold the left mouse button to keep firing, the same way holding J or X does. Clicks on the on-screen buttons still press those buttons. The touch Fire button is unchanged.
 
 ## Shooting the scenery
 

@@ -814,7 +814,7 @@ function drawTitle(ctx: CanvasRenderingContext2D, g: Game): void {
   ctx.fillStyle = '#d9cbb3'
   ctx.font = `13px ${FONT}`
   ctx.fillText('Move A/D    Jump Space    Crouch S', VIEW_W / 2, 446)
-  ctx.fillText('Dash Shift/K    Shoot J/X    Reload R    Pause Esc', VIEW_W / 2, 466)
+  ctx.fillText('Dash Shift/K    Shoot Hold click or J/X    Reload R    Pause Esc', VIEW_W / 2, 466)
   ctx.fillStyle = '#c8b89a'
   ctx.fillText(`Unlocked through car ${g.unlocked}`, VIEW_W / 2, 492)
   ctx.fillText(`Best ${g.highScore}    Lifetime haul ${g.lifetimeTreasure}`, VIEW_W / 2, 510)
