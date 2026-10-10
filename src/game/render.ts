@@ -5,6 +5,7 @@ import {
   VIEW_H,
   VIEW_W,
 } from './constants'
+import { dashCooldown, magSize, reloadTime, specOf } from './armory'
 import { describeLevel } from './levels'
 import { pistonExt, pistonT } from './physics'
 import type { Game } from './types'
@@ -33,19 +34,27 @@ export function render(ctx: CanvasRenderingContext2D, g: Game): void {
   drawSky(ctx, g)
   drawRidges(ctx, g)
   if (g.mode === 'title') drawTitle(ctx, g)
+  else if (g.mode === 'armory') drawArmory(ctx, g)
   else drawWorld(ctx, g)
   ctx.restore()
+  if (g.mode === 'title' || g.mode === 'armory') drawButtons(ctx, g)
   if (g.debug && g.mode === 'playing') drawDebug(ctx, g)
 }
 
+function snowLine(g: Game): boolean {
+  if (g.mode === 'title' || g.mode === 'armory') return g.selectedChapter === 2
+  return g.chapter === 2
+}
+
 function drawSky(ctx: CanvasRenderingContext2D, g: Game): void {
+  const snow = snowLine(g)
   const sky = ctx.createLinearGradient(0, 0, 0, VIEW_H)
-  sky.addColorStop(0, '#141a33')
-  sky.addColorStop(0.45, '#2a3d66')
-  sky.addColorStop(1, '#1b2436')
+  sky.addColorStop(0, snow ? '#d5e8f6' : '#141a33')
+  sky.addColorStop(0.45, snow ? '#8fb4d4' : '#2a3d66')
+  sky.addColorStop(1, snow ? '#e7eef2' : '#1b2436')
   ctx.fillStyle = sky
   ctx.fillRect(-20, -20, VIEW_W + 40, VIEW_H + 40)
-  ctx.fillStyle = '#f4ecd4'
+  ctx.fillStyle = snow ? '#fffaf0' : '#f4ecd4'
   ctx.beginPath()
   ctx.arc(780, 78, 28, 0, Math.PI * 2)
   ctx.fill()
@@ -53,14 +62,15 @@ function drawSky(ctx: CanvasRenderingContext2D, g: Game): void {
   ctx.beginPath()
   ctx.arc(780, 78, 46, 0, Math.PI * 2)
   ctx.fill()
-  ctx.fillStyle = 'rgba(255,255,255,0.85)'
-  for (const star of STARS) {
-    const tw = 0.45 + Math.sin(g.time * 2 + star.x) * 0.4
-    ctx.globalAlpha = tw
-    ctx.fillRect(star.x, star.y, star.s, star.s)
-  }
-  ctx.globalAlpha = 1
-  drawSnow(ctx, g.time)
+  if (!snow) {
+    ctx.fillStyle = 'rgba(255,255,255,0.85)'
+    for (const star of STARS) {
+      const tw = 0.45 + Math.sin(g.time * 2 + star.x) * 0.4
+      ctx.globalAlpha = tw
+      ctx.fillRect(star.x, star.y, star.s, star.s)
+    }
+    ctx.globalAlpha = 1
+  } else drawSnow(ctx, g.time)
 }
 
 function drawSnow(ctx: CanvasRenderingContext2D, time: number): void {
@@ -74,10 +84,12 @@ function drawSnow(ctx: CanvasRenderingContext2D, time: number): void {
 
 function drawRidges(ctx: CanvasRenderingContext2D, g: Game): void {
   const cam = g.mode === 'title' ? g.time * 30 : g.camX
-  band(ctx, '#24324a', 210, 90, cam * 0.12 + g.time * 8, 320, 150)
-  band(ctx, '#1c3a32', 250, 70, cam * 0.28 + g.time * 22, 180, 90)
-  band(ctx, '#14261f', 300, 80, cam * 0.45 + g.time * 36, 120, 70)
-  ctx.fillStyle = '#12181c'
+  const snow = snowLine(g)
+  const drift = snow ? g.time * 18 : 0
+  band(ctx, snow ? '#f4f7fb' : '#24324a', 210, 90, cam * 0.12 + g.time * 8 + drift, 320, 150)
+  band(ctx, snow ? '#c5d4e4' : '#1c3a32', 250, 70, cam * 0.28 + g.time * 22 + drift, 180, 90)
+  band(ctx, snow ? '#8ea4b8' : '#14261f', 300, 80, cam * 0.45 + g.time * 36 + drift, 120, 70)
+  ctx.fillStyle = snow ? '#c5d0d8' : '#12181c'
   ctx.fillRect(0, 430, VIEW_W, 110)
   ctx.strokeStyle = '#8d9398'
   ctx.lineWidth = 2
@@ -117,6 +129,7 @@ function drawWorld(ctx: CanvasRenderingContext2D, g: Game): void {
   ctx.save()
   ctx.translate(-Math.floor(g.camX), 0)
   drawTrain(ctx, g)
+  drawHazards(ctx, g)
   for (const s of g.solids) drawSolid(ctx, g, s)
   for (const d of g.decals) drawSign(ctx, d.x, d.y, d.text)
   for (const item of g.pickups) if (!item.taken) drawPickup(ctx, g, item)
@@ -197,15 +210,16 @@ function drawTrain(ctx: CanvasRenderingContext2D, g: Game): void {
     ctx.beginPath()
     ctx.rect(car.x, 0, car.w, VIEW_H)
     ctx.clip()
-    ctx.fillStyle = '#6a5344'
+    const snow = g.chapter === 2
+    ctx.fillStyle = snow ? '#d5dde6' : '#6a5344'
     ctx.fillRect(car.x, 30, car.w, 26)
-    ctx.fillStyle = '#e0b15a'
+    ctx.fillStyle = snow ? '#7ec8e3' : '#e0b15a'
     ctx.fillRect(car.x, 52, car.w, 5)
     if (index === 0) {
       ctx.fillStyle = '#2a2118'
       ctx.font = `700 16px ${DISPLAY}`
       ctx.textAlign = 'left'
-      ctx.fillText('ANTLER EXPRESS', car.x + 18, 48)
+      ctx.fillText(snow ? 'WHITE LINE' : 'ANTLER EXPRESS', car.x + 18, 48)
     }
     const first = Math.floor(car.x / 170) * 170
     for (let x = first; x < car.x + car.w; x += 170) {
@@ -330,6 +344,14 @@ function drawSolid(ctx: CanvasRenderingContext2D, g: Game, s: Game['solids'][num
       ctx.fillRect(s.x + 4, GROUND - 18, s.w - 8, 16)
       ctx.globalAlpha = 1
     }
+  } else if (s.kind === 'cargo') {
+    ctx.fillStyle = g.chapter === 2 ? '#d7e4ef' : '#8d6a45'
+    round(ctx, s.x, s.y, s.w, s.h, 4)
+    ctx.fill()
+    ctx.strokeStyle = '#2c3440'
+    ctx.strokeRect(s.x + 6, s.y + 10, s.w - 12, s.h - 22)
+    ctx.fillStyle = '#e23d3d'
+    ctx.fillRect(s.x, s.y + 8, s.w, 8)
   } else if (s.kind === 'platform') {
     ctx.fillStyle = '#9aa4b0'
     round(ctx, s.x, s.y, s.w, s.h, 4)
@@ -386,10 +408,50 @@ function drawPickup(ctx: CanvasRenderingContext2D, g: Game, item: Game['pickups'
   }
 }
 
+function drawHazards(ctx: CanvasRenderingContext2D, g: Game): void {
+  for (const h of g.hazards) {
+    if (h.kind === 'rail') {
+      const live = Math.sin(g.levelTime * h.period + h.phase) > 0.05
+      ctx.globalAlpha = live ? 0.95 : 0.35
+      ctx.fillStyle = live ? '#7dfff2' : '#1d4a46'
+      ctx.fillRect(h.x, GROUND - 10, h.w, 8)
+      ctx.globalAlpha = 1
+    } else if (h.kind === 'wind') {
+      const gust = Math.sin(g.levelTime * h.period + h.phase)
+      ctx.globalAlpha = gust > 0.2 ? 0.28 : 0.08
+      ctx.fillStyle = '#f4fbff'
+      ctx.fillRect(h.x, h.y, h.w, h.h)
+      ctx.globalAlpha = 1
+    } else {
+      ctx.fillStyle = '#f7fbff'
+      ctx.fillRect(h.x, 36, 14, 8)
+      ctx.fillRect(h.x + h.w * 0.5, 48, 10, 6)
+    }
+  }
+}
+
 function drawBullet(ctx: CanvasRenderingContext2D, b: Game['bullets'][number]): void {
   ctx.save()
   ctx.translate(b.x + b.w / 2, b.y + b.h / 2)
-  ctx.fillStyle = b.friendly ? '#ffe08a' : b.dodge === 'low' ? '#ff7a4a' : b.dodge === 'high' ? '#ffd0d0' : '#ffb45a'
+  const color =
+    b.kind === 'laser'
+      ? '#9af6ff'
+      : b.kind === 'rocket'
+        ? '#ff7a3a'
+        : b.kind === 'grenade'
+          ? '#6f8f4a'
+          : b.kind === 'shard'
+            ? '#d5f6ff'
+            : b.kind === 'pellet'
+              ? '#ffe08a'
+              : b.friendly
+                ? '#ffe08a'
+                : b.dodge === 'low'
+                  ? '#ff7a4a'
+                  : b.dodge === 'high'
+                    ? '#ffd0d0'
+                    : '#ffb45a'
+  ctx.fillStyle = color
   round(ctx, -b.w / 2, -b.h / 2, b.w, b.h, 3)
   ctx.fill()
   ctx.restore()
@@ -540,21 +602,39 @@ function drawEnemy(ctx: CanvasRenderingContext2D, g: Game, e: Game['enemies'][nu
   if (e.kind === 'boss' && e.boss === 'mech') drawMech(ctx, g, e)
   else if (e.kind === 'boss' && e.boss === 'conductor') drawConductor(ctx, g, e)
   else if (e.kind === 'boss' && e.boss === 'turret') drawTurret(ctx, g, e)
+  else if (e.kind === 'boss' && e.boss === 'ram') drawRam(ctx, e)
+  else if (e.kind === 'boss' && e.boss === 'hawk') drawHawk(ctx, g, e)
+  else if (e.kind === 'boss' && e.boss === 'summit') drawSummit(ctx, e)
   else if (e.kind === 'drone') drawDrone(ctx, g, e)
-  else drawRobot(ctx, e, e.kind === 'shooter')
+  else if (e.kind === 'sniper') drawSniper(ctx, e)
+  else drawRobot(ctx, e, e.kind)
+  if (e.kind === 'sniper' && e.beam) {
+    ctx.strokeStyle = 'rgba(255,70,70,0.85)'
+    ctx.lineWidth = 2
+    ctx.beginPath()
+    ctx.moveTo(e.x + e.w / 2, e.y + 16)
+    ctx.lineTo(e.x + e.w / 2 + e.facing * 640, e.y + 16)
+    ctx.stroke()
+  }
   ctx.restore()
 }
 
-function drawRobot(ctx: CanvasRenderingContext2D, e: Game['enemies'][number], shooter: boolean): void {
+function drawRobot(ctx: CanvasRenderingContext2D, e: Game['enemies'][number], kind: Game['enemies'][number]['kind']): void {
   ctx.save()
   ctx.translate(e.x + e.w / 2, e.y + e.h)
   ctx.scale(e.facing, 1)
+  const body =
+    kind === 'shield' ? '#3d5a73' : kind === 'dasher' ? '#7f1d1d' : kind === 'grenadier' ? '#3f6212' : kind === 'heavy' ? '#1f2937' : kind === 'shooter' ? '#7f1d1d' : '#6b7280'
   ctx.fillStyle = '#4b5563'
-  round(ctx, -14, -16, 28, 10, 3)
+  round(ctx, -14, -16, kind === 'heavy' ? 40 : 28, 10, 3)
   ctx.fill()
-  ctx.fillStyle = shooter ? '#7f1d1d' : '#6b7280'
+  ctx.fillStyle = body
   round(ctx, -16, -40, 32, 26, 5)
   ctx.fill()
+  if (kind === 'shield') {
+    ctx.fillStyle = '#d6dee8'
+    ctx.fillRect(8, -46, 8, 34)
+  }
   ctx.fillStyle = '#ff3b3b'
   ellipse(ctx, 6, -28, 4, 3)
   ctx.fillStyle = '#d1d5db'
@@ -698,37 +778,168 @@ function drawTurret(ctx: CanvasRenderingContext2D, g: Game, e: Game['enemies'][n
   }
 }
 
+function drawRam(ctx: CanvasRenderingContext2D, e: Game['enemies'][number]): void {
+  ctx.save()
+  ctx.translate(e.x + e.w / 2, e.y + e.h)
+  ctx.scale(e.facing, 1)
+  ctx.fillStyle = '#9fb4c6'
+  round(ctx, -46, -28, 28, 26, 4)
+  ctx.fill()
+  round(ctx, 16, -28, 28, 26, 4)
+  ctx.fill()
+  ctx.fillStyle = '#d7e4ee'
+  round(ctx, -52, -96, 104, 74, 16)
+  ctx.fill()
+  ctx.fillStyle = '#6f8ea6'
+  round(ctx, -58, -78, 22, 36, 6)
+  ctx.fill()
+  round(ctx, 36, -78, 22, 36, 6)
+  ctx.fill()
+  ctx.fillStyle = '#e8f4ff'
+  ctx.beginPath()
+  ctx.moveTo(-20, -96)
+  ctx.lineTo(-34, -122)
+  ctx.lineTo(-6, -96)
+  ctx.fill()
+  ctx.beginPath()
+  ctx.moveTo(20, -96)
+  ctx.lineTo(34, -122)
+  ctx.lineTo(6, -96)
+  ctx.fill()
+  ctx.fillStyle = e.phase === 'windup' || e.phase === 'charge' ? '#ffd0a0' : '#1d4e89'
+  round(ctx, -18, -78, 36, 12, 4)
+  ctx.fill()
+  ctx.fillStyle = '#1b2836'
+  ctx.font = `700 11px ${FONT}`
+  ctx.textAlign = 'center'
+  ctx.fillText('RAM', 0, -48)
+  ctx.restore()
+}
+
+function drawHawk(ctx: CanvasRenderingContext2D, g: Game, e: Game['enemies'][number]): void {
+  ctx.save()
+  ctx.translate(e.x + e.w / 2, e.y + e.h / 2)
+  const flap = Math.sin(g.time * 14) * 10
+  ctx.fillStyle = '#e7eef5'
+  ctx.beginPath()
+  ctx.moveTo(-8, 0)
+  ctx.lineTo(-58, flap)
+  ctx.lineTo(-20, 8)
+  ctx.fill()
+  ctx.beginPath()
+  ctx.moveTo(8, 0)
+  ctx.lineTo(58, -flap)
+  ctx.lineTo(20, 8)
+  ctx.fill()
+  ctx.fillStyle = '#8aa0b4'
+  round(ctx, -22, -12, 44, 24, 10)
+  ctx.fill()
+  ctx.fillStyle = '#f4fbff'
+  ctx.beginPath()
+  ctx.moveTo(16, -4)
+  ctx.lineTo(34, 2)
+  ctx.lineTo(16, 8)
+  ctx.fill()
+  ctx.fillStyle = '#e23d3d'
+  ctx.beginPath()
+  ctx.arc(6, -2, 3, 0, Math.PI * 2)
+  ctx.fill()
+  ctx.restore()
+}
+
+function drawSummit(ctx: CanvasRenderingContext2D, e: Game['enemies'][number]): void {
+  ctx.save()
+  ctx.translate(e.x + e.w / 2, e.y + e.h)
+  ctx.fillStyle = '#5c6b7a'
+  round(ctx, -54, -36, 30, 34, 4)
+  ctx.fill()
+  round(ctx, 24, -36, 30, 34, 4)
+  ctx.fill()
+  ctx.fillStyle = '#d5dee6'
+  round(ctx, -62, -128, 124, 98, 12)
+  ctx.fill()
+  ctx.fillStyle = '#1f2937'
+  round(ctx, -40, -114, 80, 28, 6)
+  ctx.fill()
+  ctx.fillStyle = e.beam ? '#ffb4a8' : '#7dd3fc'
+  round(ctx, -28, -106, 56, 12, 4)
+  ctx.fill()
+  ctx.fillStyle = '#e8f2f8'
+  ctx.beginPath()
+  ctx.moveTo(-30, -128)
+  ctx.lineTo(0, -156)
+  ctx.lineTo(30, -128)
+  ctx.fill()
+  ctx.fillStyle = '#1b2836'
+  ctx.font = `700 11px ${FONT}`
+  ctx.textAlign = 'center'
+  ctx.fillText('SUMMIT', 0, -70)
+  ctx.restore()
+}
+
+function drawSniper(ctx: CanvasRenderingContext2D, e: Game['enemies'][number]): void {
+  ctx.save()
+  ctx.translate(e.x + e.w / 2, e.y + e.h)
+  ctx.scale(e.facing, 1)
+  ctx.fillStyle = '#3f4c5a'
+  round(ctx, -12, -16, 24, 14, 3)
+  ctx.fill()
+  ctx.fillStyle = '#1f2937'
+  round(ctx, -14, -50, 28, 36, 4)
+  ctx.fill()
+  ctx.fillStyle = '#e23d3d'
+  ellipse(ctx, 4, -36, 4, 3)
+  ctx.fillStyle = '#d1d5db'
+  ctx.fillRect(8, -38, 26, 4)
+  ctx.fillStyle = e.beam ? '#ffb4a8' : '#9ca3af'
+  ctx.fillRect(28, -40, 8, 8)
+  ctx.restore()
+}
+
 function drawHud(ctx: CanvasRenderingContext2D, g: Game): void {
   const p = g.player
-  for (let i = 0; i < 5; i++) {
-    drawHeart(ctx, 22 + i * 28, 24, 9, i < p.hp ? '#e85d4c' : '#3a2a2a')
+  const hearts = Math.max(1, p.maxHp)
+  const gap = hearts > 6 ? 20 : 26
+  const heartSize = hearts > 6 ? 7 : 9
+  for (let i = 0; i < hearts; i++) {
+    drawHeart(ctx, 18 + i * gap, 22, heartSize, i < p.hp ? '#e85d4c' : '#3a2a2a')
   }
   ctx.textAlign = 'center'
   ctx.fillStyle = '#f6e7c1'
   ctx.font = `700 18px ${DISPLAY}`
-  ctx.fillText(`LV ${g.levelId}  ${g.levelName.toUpperCase()}`, VIEW_W / 2, 26)
+  const chapter = g.chapter === 2 ? 'SNOW' : 'NIGHT'
+  ctx.fillText(`${chapter}  ${g.levelId}  ${g.levelName.toUpperCase()}`, VIEW_W / 2, 26)
   ctx.textAlign = 'right'
   ctx.font = `700 16px ${FONT}`
   ctx.fillText(`${g.score}`, 760, 22)
   ctx.fillStyle = '#7ddec2'
   ctx.font = `700 14px ${FONT}`
   ctx.fillText(`◆ ${g.runTreasure}`, 760, 40)
+  ctx.fillStyle = '#f0c36a'
+  ctx.fillText(`COIN ${g.coins}`, 760, 58)
+  const spec = specOf(g.weapon)
+  const mag = magSize(g)
   ctx.textAlign = 'left'
   ctx.fillStyle = '#f6e7c1'
   ctx.font = `700 12px ${FONT}`
-  ctx.fillText(p.reloading ? 'RELOAD' : 'AMMO', 16, VIEW_H - 36)
-  for (let i = 0; i < 10; i++) {
-    ctx.fillStyle = i < p.ammo ? '#f0c36a' : '#3a3428'
-    round(ctx, 16 + i * 16, VIEW_H - 28, 12, 6, 2)
+  ctx.fillText(p.reloading ? 'RELOAD' : spec.name.toUpperCase(), 16, VIEW_H - 36)
+  ctx.fillText(`${p.ammo}/${mag}`, 168, VIEW_H - 36)
+  const shown = Math.min(mag, 12)
+  for (let i = 0; i < shown; i++) {
+    const filled = mag <= 12 ? i < p.ammo : i < Math.round((p.ammo / mag) * shown)
+    ctx.fillStyle = filled ? '#f0c36a' : '#3a3428'
+    round(ctx, 16 + i * 14, VIEW_H - 28, 10, 6, 2)
     ctx.fill()
   }
   if (p.reloading) {
-    const ratio = 1 - p.reloadT / 0.85
+    const reload = Math.max(0.05, reloadTime(g))
+    const ratio = 1 - p.reloadT / reload
     ctx.fillStyle = '#f0c36a'
     ctx.fillRect(16, VIEW_H - 16, 150 * Math.max(0, Math.min(1, ratio)), 3)
   }
   const ready = p.dashCd <= 0
-  const dashRatio = ready ? 1 : 1 - p.dashCd / 0.78
+  const dashMax = Math.max(0.05, dashCooldown(g))
+  const dashRatio = ready ? 1 : 1 - p.dashCd / dashMax
   ctx.fillStyle = 'rgba(0,0,0,0.35)'
   round(ctx, 190, VIEW_H - 32, 110, 18, 6)
   ctx.fill()
@@ -739,6 +950,16 @@ function drawHud(ctx: CanvasRenderingContext2D, g: Game): void {
   ctx.font = `700 11px ${FONT}`
   ctx.textAlign = 'center'
   ctx.fillText('DASH', 245, VIEW_H - 19)
+  if (spec.style === 'charge') {
+    ctx.fillStyle = 'rgba(0,0,0,0.35)'
+    round(ctx, 312, VIEW_H - 32, 110, 18, 6)
+    ctx.fill()
+    ctx.fillStyle = p.charge > 0.95 ? '#fff1c4' : '#7dd3fc'
+    round(ctx, 314, VIEW_H - 30, 106 * p.charge, 14, 5)
+    ctx.fill()
+    ctx.fillStyle = '#f6e7c1'
+    ctx.fillText('CHARGE', 367, VIEW_H - 19)
+  }
   const boss = g.enemies.find((e) => e.kind === 'boss' && (e.alive || e.deathT > 0.2))
   if (boss && g.bossIntro) {
     const ratio = Math.max(0, boss.hp / boss.maxHp)
@@ -806,18 +1027,44 @@ function drawTitle(ctx: CanvasRenderingContext2D, g: Game): void {
     flash: Math.sin(g.time * 3) > 0.65 ? 0.1 : 0,
     onGround: true,
   })
-  const info = describeLevel(g.selectedLevel)
+  const info = describeLevel(g.selectedLevel, g.selectedChapter)
+  ctx.fillStyle = '#9fd0c4'
+  ctx.font = `700 13px ${FONT}`
+  ctx.fillText(g.selectedChapter === 2 ? 'SNOW LINE' : 'NIGHT LINE', VIEW_W / 2, 236)
   ctx.fillStyle = '#fff4d2'
   ctx.font = `700 20px ${DISPLAY}`
   const label = info.boss ? `BOSS ${info.id}   ${info.name.toUpperCase()}` : `CAR ${info.id}   ${info.name.toUpperCase()}`
   ctx.fillText(label, VIEW_W / 2, 332)
   ctx.fillStyle = '#d9cbb3'
   ctx.font = `13px ${FONT}`
-  ctx.fillText('Move A/D    Jump Space    Crouch S', VIEW_W / 2, 446)
-  ctx.fillText('Dash Shift/K    Shoot Hold click or J/X    Reload R    Pause Esc', VIEW_W / 2, 466)
+  ctx.fillText('Move A/D    Jump Space    Crouch S    Dash Shift/K', VIEW_W / 2, 438)
+  ctx.fillText('Shoot  Hold click or J/X    Guns 1-5 or wheel    Reload R', VIEW_W / 2, 458)
+  ctx.fillText('Pause Esc    Armory spends coins between cars', VIEW_W / 2, 478)
   ctx.fillStyle = '#c8b89a'
-  ctx.fillText(`Unlocked through car ${g.unlocked}`, VIEW_W / 2, 492)
-  ctx.fillText(`Best ${g.highScore}    Lifetime haul ${g.lifetimeTreasure}`, VIEW_W / 2, 510)
+  const opened = g.selectedChapter === 2 ? g.chapter2 : g.unlocked
+  ctx.fillText(`Unlocked through car ${opened}`, VIEW_W / 2, 498)
+  ctx.fillText(`Best ${g.highScore}    Coins ${g.coins}    Haul ${g.lifetimeTreasure}`, VIEW_W / 2, 516)
+}
+
+function drawArmory(ctx: CanvasRenderingContext2D, g: Game): void {
+  ctx.fillStyle = 'rgba(12, 10, 16, 0.82)'
+  round(ctx, 24, 12, VIEW_W - 48, VIEW_H - 24, 16)
+  ctx.fill()
+  ctx.strokeStyle = '#e0b15a'
+  ctx.lineWidth = 2
+  ctx.stroke()
+  ctx.textAlign = 'left'
+  ctx.fillStyle = '#f0c36a'
+  ctx.font = `700 28px ${DISPLAY}`
+  ctx.fillText('ARMORY', 48, 48)
+  ctx.textAlign = 'right'
+  ctx.fillStyle = '#f0c36a'
+  ctx.font = `700 18px ${FONT}`
+  ctx.fillText(`COINS  ${g.coins}`, VIEW_W - 48, 46)
+  ctx.textAlign = 'left'
+  ctx.fillStyle = '#c8b89a'
+  ctx.font = `13px ${FONT}`
+  ctx.fillText('Buy a gun or a rank. 1-5 and the wheel swap owned guns.', 160, 48)
 }
 
 function drawPause(ctx: CanvasRenderingContext2D, g: Game): void {
@@ -868,13 +1115,15 @@ function drawGameOver(ctx: CanvasRenderingContext2D, g: Game): void {
 
 function drawButtons(ctx: CanvasRenderingContext2D, g: Game): void {
   for (const b of layoutButtons(g)) {
-    ctx.fillStyle = b.id === 'start' || b.id === 'nextlevel' || b.id === 'resume' ? '#f0c36a' : 'rgba(28,22,16,0.85)'
+    const primary = b.id === 'start' || b.id === 'nextlevel' || b.id === 'resume' || b.id === 'continue'
+    const equipped = b.label.includes('EQUIPPED')
+    ctx.fillStyle = primary || equipped ? '#f0c36a' : 'rgba(28,22,16,0.85)'
     round(ctx, b.x, b.y, b.w, b.h, 8)
     ctx.fill()
     ctx.strokeStyle = '#e0b15a'
     ctx.lineWidth = 1.5
     ctx.stroke()
-    ctx.fillStyle = b.id === 'start' || b.id === 'nextlevel' || b.id === 'resume' ? '#2a2118' : '#f6e7c1'
+    ctx.fillStyle = primary || equipped ? '#2a2118' : '#f6e7c1'
     ctx.font = `700 16px ${FONT}`
     ctx.textAlign = 'center'
     ctx.textBaseline = 'middle'

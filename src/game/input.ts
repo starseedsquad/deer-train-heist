@@ -54,10 +54,18 @@ export class Input {
   private mouseDown = false
   private mouseEdge = false
   private mouseId: number | null = null
+  private slot = 0
+  private wheel = 0
 
   constructor(canvas: HTMLCanvasElement, game: Game) {
     window.addEventListener('keydown', (event) => {
       if (event.repeat) return
+      const slot = Number(event.code.replace('Digit', ''))
+      if (event.code.startsWith('Digit') && slot >= 1 && slot <= 5) {
+        event.preventDefault()
+        this.slot = slot
+        return
+      }
       const actions = actionsFor(event.code)
       if (actions.length === 0) return
       event.preventDefault()
@@ -81,6 +89,10 @@ export class Input {
     }
     window.addEventListener('pointerup', endMouse)
     window.addEventListener('pointercancel', endMouse)
+    canvas.addEventListener('wheel', (event) => {
+      event.preventDefault()
+      this.wheel += event.deltaY > 0 ? 1 : event.deltaY < 0 ? -1 : 0
+    }, { passive: false })
     canvas.addEventListener('contextmenu', (event) => event.preventDefault())
     canvas.addEventListener('selectstart', (event) => event.preventDefault())
     canvas.addEventListener('dragstart', (event) => event.preventDefault())
@@ -144,6 +156,10 @@ export class Input {
     input.click = this.click
     input.clickX = this.clickX
     input.clickY = this.clickY
+    input.weaponSlot = this.slot
+    input.wheel = this.wheel || (this.pressed.has('weapon') ? 1 : 0)
+    this.slot = 0
+    this.wheel = 0
     this.pressed.clear()
     this.click = false
     return input

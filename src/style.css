@@ -76,7 +76,8 @@ canvas {
 }
 
 .cluster button,
-#touch-pause {
+#touch-pause,
+#touch-gun {
   pointer-events: auto;
   border: 2px solid #e0b15a;
   background: rgba(16, 12, 10, 0.72);
@@ -102,6 +103,14 @@ canvas {
   top: calc(12px + env(safe-area-inset-top));
   right: calc(12px + env(safe-area-inset-right));
   width: 64px;
+  height: 44px;
+}
+
+#touch-gun {
+  position: absolute;
+  top: calc(12px + env(safe-area-inset-top));
+  left: calc(12px + env(safe-area-inset-left));
+  width: 72px;
   height: 44px;
 }
 

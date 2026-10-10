@@ -73,7 +73,7 @@ export function createAutopilot(): (g: Game, dt: number) => InputState {
       input.confirmPressed = true
       return input
     }
-    if (g.mode === 'complete') {
+    if (g.mode === 'complete' || g.mode === 'armory') {
       confirmWait += dt
       if (confirmWait > 0.08) input.confirmPressed = true
       return input
@@ -201,6 +201,7 @@ export function createAutopilot(): (g: Game, dt: number) => InputState {
         if (!e.alive) continue
         if (e.x + e.w < p.x - 10 || e.x > p.x + 440) continue
         shoot = true
+        if (e.kind === 'shield') crouch = true
       }
     }
 
