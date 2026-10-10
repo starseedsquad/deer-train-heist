@@ -1,0 +1,104 @@
+:root {
+  color: #f6e7c1;
+  background: #07080d;
+  font-family: "Trebuchet MS", Verdana, sans-serif;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  margin: 0;
+  height: 100%;
+  overflow: hidden;
+  overscroll-behavior: none;
+  touch-action: none;
+  background:
+    radial-gradient(1200px 500px at 50% -10%, #243056 0%, transparent 55%),
+    #07080d;
+}
+
+#app {
+  height: 100%;
+  display: grid;
+  place-items: center;
+}
+
+canvas {
+  width: min(100vw, calc(100vh * 960 / 540));
+  height: min(100vh, calc(100vw * 540 / 960));
+  background: #11141c;
+  touch-action: none;
+  box-shadow: 0 20px 80px rgba(0, 0, 0, 0.45);
+}
+
+#touch {
+  display: none;
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  z-index: 3;
+}
+
+@media (pointer: coarse), (max-width: 860px) {
+  #touch {
+    display: block;
+  }
+}
+
+#touch.force {
+  display: block;
+}
+
+.cluster {
+  position: absolute;
+  bottom: calc(16px + env(safe-area-inset-bottom));
+  display: grid;
+  grid-template-columns: 76px 76px;
+  gap: 10px;
+  pointer-events: none;
+}
+
+.cluster.left {
+  left: calc(12px + env(safe-area-inset-left));
+}
+
+.cluster.right {
+  right: calc(12px + env(safe-area-inset-right));
+}
+
+.cluster button,
+#touch-pause {
+  pointer-events: auto;
+  border: 2px solid #e0b15a;
+  background: rgba(16, 12, 10, 0.72);
+  color: #f6e7c1;
+  border-radius: 16px;
+  font: 700 14px/1 "Trebuchet MS", Verdana, sans-serif;
+  letter-spacing: 0.04em;
+  width: 76px;
+  height: 76px;
+  touch-action: none;
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+.cluster.left button:last-child,
+.cluster.right button:last-child {
+  grid-column: 1 / -1;
+  height: 64px;
+}
+
+#touch-pause {
+  position: absolute;
+  top: calc(12px + env(safe-area-inset-top));
+  right: calc(12px + env(safe-area-inset-right));
+  width: 64px;
+  height: 44px;
+}
+
+button:active {
+  background: rgba(224, 177, 90, 0.35);
+}

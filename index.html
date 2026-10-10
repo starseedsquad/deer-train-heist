@@ -1,0 +1,29 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover" />
+    <meta name="theme-color" content="#07080d" />
+    <title>Antler Express</title>
+    <link rel="icon" href="./favicon.svg" />
+  </head>
+  <body>
+    <div id="app">
+      <canvas id="game" width="960" height="540" aria-label="Antler Express, a side-scrolling train heist"></canvas>
+    </div>
+    <div id="touch">
+      <div class="cluster left">
+        <button type="button" data-hold="left" aria-label="Move left">◀</button>
+        <button type="button" data-hold="right" aria-label="Move right">▶</button>
+        <button type="button" data-hold="crouch" aria-label="Crouch">CROUCH</button>
+      </div>
+      <div class="cluster right">
+        <button type="button" data-hold="dash" aria-label="Dash">DASH</button>
+        <button type="button" data-hold="jump" aria-label="Jump">JUMP</button>
+        <button type="button" data-hold="shoot" aria-label="Shoot">FIRE</button>
+      </div>
+      <button id="touch-pause" type="button" data-hold="pause" aria-label="Pause">II</button>
+    </div>
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>
