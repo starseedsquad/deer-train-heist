@@ -8,7 +8,7 @@ import {
 import { dashCooldown, magSize, reloadTime, specOf } from './armory'
 import { describeLevel } from './levels'
 import { pistonExt, pistonT } from './physics'
-import type { Game } from './types'
+import type { CarSkin, CarSpan, Game } from './types'
 import { layoutButtons } from './ui'
 
 const FONT = 'Trebuchet MS, Verdana, sans-serif'
@@ -203,50 +203,27 @@ function spans(g: Game): { x: number; w: number }[] {
   return out
 }
 
+function carSpans(g: Game): CarSpan[] {
+  if (g.cars.length > 0) return g.cars
+  return spans(g).map((span) => ({ ...span, skin: 'passenger' as CarSkin }))
+}
+
+const SKIN_LABEL: Record<CarSkin, string> = {
+  passenger: 'COACH',
+  cargo: 'CARGO',
+  vault: 'VAULT',
+  engine: 'ENGINE',
+}
+
 function drawTrain(ctx: CanvasRenderingContext2D, g: Game): void {
-  const cars = spans(g)
+  const cars = carSpans(g)
+  const snow = g.chapter === 2
   cars.forEach((car, index) => {
     ctx.save()
     ctx.beginPath()
     ctx.rect(car.x, 0, car.w, VIEW_H)
     ctx.clip()
-    const snow = g.chapter === 2
-    ctx.fillStyle = snow ? '#d5dde6' : '#6a5344'
-    ctx.fillRect(car.x, 30, car.w, 26)
-    ctx.fillStyle = snow ? '#7ec8e3' : '#e0b15a'
-    ctx.fillRect(car.x, 52, car.w, 5)
-    if (index === 0) {
-      ctx.fillStyle = '#2a2118'
-      ctx.font = `700 16px ${DISPLAY}`
-      ctx.textAlign = 'left'
-      ctx.fillText(snow ? 'WHITE LINE' : 'ANTLER EXPRESS', car.x + 18, 48)
-    }
-    const first = Math.floor(car.x / 170) * 170
-    for (let x = first; x < car.x + car.w; x += 170) {
-      ctx.fillStyle = '#3c2f26'
-      ctx.fillRect(x, 58, 16, GROUND - 58)
-      ctx.fillStyle = '#1c2836'
-      round(ctx, x + 26, 74, 128, 132, 8)
-      ctx.fill()
-      ctx.fillStyle = '#4a3c32'
-      ctx.fillRect(x + 16, 214, 150, GROUND - 214)
-      ctx.fillStyle = '#6d5644'
-      ctx.fillRect(x + 16, 214, 150, 10)
-      ctx.fillStyle = '#5a4638'
-      ctx.fillRect(x + 28, GROUND - 70, 46, 36)
-      ctx.fillRect(x + 86, GROUND - 70, 46, 36)
-      const glow = 0.35 + Math.sin(g.time * 10 + x) * 0.08
-      ctx.fillStyle = `rgba(255, 214, 150, ${glow})`
-      ctx.beginPath()
-      ctx.arc(x + 90, 78, 7, 0, Math.PI * 2)
-      ctx.fill()
-    }
-    ctx.fillStyle = '#7a5b3e'
-    ctx.fillRect(car.x, GROUND - 8, car.w, 16)
-    ctx.fillStyle = '#3e3128'
-    ctx.fillRect(car.x, GROUND + 8, car.w, VIEW_H - GROUND)
-    ctx.fillStyle = '#d7c4a4'
-    for (let x = car.x; x < car.x + car.w; x += 28) ctx.fillRect(x, GROUND - 4, 14, 3)
+    drawCarShell(ctx, g, car, snow, index === 0)
     ctx.restore()
     ctx.fillStyle = '#2b3138'
     ctx.beginPath()
@@ -259,7 +236,15 @@ function drawTrain(ctx: CanvasRenderingContext2D, g: Game): void {
     const b = cars[i + 1]
     const gapX = a.x + a.w
     const gapW = b.x - gapX
-    if (gapW < 8 || gapW > 420) continue
+    if (gapW < 8) {
+      ctx.fillStyle = snow ? '#8aa0b4' : '#241c16'
+      ctx.fillRect(gapX - 5, 36, 10, GROUND - 28)
+      ctx.fillStyle = '#e0b15a'
+      ctx.fillRect(gapX - 8, 78, 16, 7)
+      ctx.fillRect(gapX - 8, GROUND - 52, 16, 7)
+      continue
+    }
+    if (gapW > 420) continue
     ctx.strokeStyle = '#9aa3ad'
     ctx.lineWidth = 4
     ctx.beginPath()
@@ -273,6 +258,156 @@ function drawTrain(ctx: CanvasRenderingContext2D, g: Game): void {
     ctx.lineTo(gapX + gapW, GROUND - 28)
     ctx.stroke()
   }
+}
+
+function drawCarShell(ctx: CanvasRenderingContext2D, g: Game, car: CarSpan, snow: boolean, first: boolean): void {
+  const roof = snow
+    ? { passenger: '#d5dde6', cargo: '#c5d0dc', vault: '#9aa8b8', engine: '#b7c3ce' }
+    : { passenger: '#6a5344', cargo: '#5c4a38', vault: '#2c3038', engine: '#3a3532' }
+  const stripe = snow
+    ? { passenger: '#7ec8e3', cargo: '#8eb4d4', vault: '#d4b15a', engine: '#e07a4a' }
+    : { passenger: '#e0b15a', cargo: '#c45c26', vault: '#d4b15a', engine: '#e23d3d' }
+  ctx.fillStyle = roof[car.skin]
+  ctx.fillRect(car.x, 30, car.w, 26)
+  ctx.fillStyle = stripe[car.skin]
+  ctx.fillRect(car.x, 52, car.w, 5)
+  ctx.font = `700 16px ${DISPLAY}`
+  ctx.textAlign = 'left'
+  if (first) {
+    ctx.fillStyle = car.skin === 'vault' || car.skin === 'engine' ? '#f6e7c1' : '#2a2118'
+    ctx.fillText(snow ? 'WHITE LINE' : 'ANTLER EXPRESS', car.x + 18, 48)
+  }
+  if (car.w > 220) {
+    ctx.fillStyle = car.skin === 'vault' ? '#f0c36a' : car.skin === 'engine' ? '#ffd0b0' : '#2a2118'
+    ctx.textAlign = 'right'
+    ctx.font = `700 13px ${FONT}`
+    ctx.fillText(SKIN_LABEL[car.skin], car.x + car.w - 16, 48)
+  }
+  const firstBay = Math.floor(car.x / 170) * 170
+  for (let x = firstBay; x < car.x + car.w; x += 170) {
+    if (car.skin === 'passenger') drawCoachBay(ctx, g, x, snow)
+    else if (car.skin === 'cargo') drawCargoBay(ctx, g, x, snow)
+    else if (car.skin === 'vault') drawVaultBay(ctx, g, x, snow)
+    else drawEngineBay(ctx, g, x, snow)
+  }
+  const floor = snow
+    ? { passenger: '#d7e2ea', cargo: '#c3ccd4', vault: '#8d97a3', engine: '#9aa3aa' }
+    : { passenger: '#7a5b3e', cargo: '#6a4e34', vault: '#4a453c', engine: '#5a534c' }
+  ctx.fillStyle = floor[car.skin]
+  ctx.fillRect(car.x, GROUND - 8, car.w, 16)
+  ctx.fillStyle = snow ? '#2c3844' : '#3e3128'
+  ctx.fillRect(car.x, GROUND + 8, car.w, VIEW_H - GROUND)
+  ctx.fillStyle = car.skin === 'vault' || car.skin === 'engine' ? '#c5ccd4' : '#d7c4a4'
+  for (let x = car.x; x < car.x + car.w; x += 28) ctx.fillRect(x, GROUND - 4, 14, 3)
+}
+
+function drawCoachBay(ctx: CanvasRenderingContext2D, g: Game, x: number, snow: boolean): void {
+  ctx.fillStyle = snow ? '#8ea0b0' : '#3c2f26'
+  ctx.fillRect(x, 58, 16, GROUND - 58)
+  ctx.fillStyle = snow ? '#243848' : '#1c2836'
+  round(ctx, x + 26, 74, 128, 132, 8)
+  ctx.fill()
+  ctx.fillStyle = snow ? '#d5dee6' : '#4a3c32'
+  ctx.fillRect(x + 16, 214, 150, GROUND - 214)
+  ctx.fillStyle = snow ? '#9eb0c0' : '#6d5644'
+  ctx.fillRect(x + 16, 214, 150, 10)
+  ctx.fillStyle = snow ? '#7f93a6' : '#5a4638'
+  ctx.fillRect(x + 28, GROUND - 70, 46, 36)
+  ctx.fillRect(x + 86, GROUND - 70, 46, 36)
+  const glow = 0.35 + Math.sin(g.time * 10 + x) * 0.08
+  ctx.fillStyle = `rgba(255, 214, 150, ${glow})`
+  ctx.beginPath()
+  ctx.arc(x + 90, 78, 7, 0, Math.PI * 2)
+  ctx.fill()
+}
+
+function drawCargoBay(ctx: CanvasRenderingContext2D, g: Game, x: number, snow: boolean): void {
+  ctx.fillStyle = snow ? '#b7c4d0' : '#6e5844'
+  ctx.fillRect(x + 8, 64, 154, GROUND - 72)
+  ctx.strokeStyle = snow ? '#8fa2b4' : '#4a3828'
+  ctx.lineWidth = 3
+  for (let y = 80; y < GROUND - 20; y += 28) {
+    ctx.beginPath()
+    ctx.moveTo(x + 10, y)
+    ctx.lineTo(x + 158, y)
+    ctx.stroke()
+  }
+  ctx.fillStyle = snow ? '#d5e0e8' : '#8d6a45'
+  round(ctx, x + 28, 110, 52, 46, 3)
+  ctx.fill()
+  round(ctx, x + 92, 150, 52, 46, 3)
+  ctx.fill()
+  ctx.strokeStyle = snow ? '#5c7388' : '#c45c26'
+  ctx.beginPath()
+  ctx.moveTo(x + 28, 110)
+  ctx.lineTo(x + 80, 156)
+  ctx.moveTo(x + 80, 110)
+  ctx.lineTo(x + 28, 156)
+  ctx.stroke()
+  const glow = 0.25 + Math.sin(g.time * 6 + x) * 0.06
+  ctx.fillStyle = `rgba(201, 162, 122, ${glow})`
+  ctx.beginPath()
+  ctx.arc(x + 90, 86, 6, 0, Math.PI * 2)
+  ctx.fill()
+}
+
+function drawVaultBay(ctx: CanvasRenderingContext2D, g: Game, x: number, snow: boolean): void {
+  ctx.fillStyle = snow ? '#1c2834' : '#141820'
+  ctx.fillRect(x + 8, 64, 154, GROUND - 72)
+  ctx.fillStyle = '#8a7344'
+  for (let row = 0; row < 3; row++) {
+    for (let col = 0; col < 4; col++) {
+      ctx.fillRect(x + 36 + col * 28, 120 + row * 22, 20, 10)
+    }
+  }
+  ctx.strokeStyle = '#d4b15a'
+  ctx.lineWidth = 2
+  ctx.strokeRect(x + 30, 108, 116, 74)
+  ctx.fillStyle = snow ? '#9ec4de' : '#1c2836'
+  round(ctx, x + 48, 210, 72, 48, 4)
+  ctx.fill()
+  ctx.strokeStyle = '#c5ccd4'
+  for (let i = 0; i < 4; i++) ctx.strokeRect(x + 56 + i * 16, 214, 2, 40)
+  ctx.fillStyle = '#5c6770'
+  for (let i = 0; i < 5; i++) ctx.fillRect(x + 22 + i * 28, 78, 4, 4)
+  const glow = 0.35 + Math.sin(g.time * 4 + x) * 0.1
+  ctx.fillStyle = `rgba(125, 206, 160, ${glow})`
+  ctx.beginPath()
+  ctx.arc(x + 90, 280, 5, 0, Math.PI * 2)
+  ctx.fill()
+}
+
+function drawEngineBay(ctx: CanvasRenderingContext2D, g: Game, x: number, snow: boolean): void {
+  ctx.fillStyle = snow ? '#3e4a54' : '#2a2724'
+  ctx.fillRect(x + 8, 64, 154, GROUND - 72)
+  ctx.strokeStyle = snow ? '#9eb0c0' : '#5c656e'
+  ctx.lineWidth = 6
+  ctx.beginPath()
+  ctx.moveTo(x + 16, 100)
+  ctx.lineTo(x + 150, 100)
+  ctx.moveTo(x + 16, 130)
+  ctx.lineTo(x + 150, 130)
+  ctx.stroke()
+  ctx.fillStyle = '#1b2128'
+  ctx.beginPath()
+  ctx.arc(x + 48, 180, 16, 0, Math.PI * 2)
+  ctx.arc(x + 96, 180, 16, 0, Math.PI * 2)
+  ctx.fill()
+  ctx.fillStyle = '#e8c27a'
+  ctx.beginPath()
+  ctx.arc(x + 48, 180, 4, 0, Math.PI * 2)
+  ctx.arc(x + 96, 180, 4, 0, Math.PI * 2)
+  ctx.fill()
+  const heat = 0.55 + Math.sin(g.time * 8 + x) * 0.2
+  ctx.fillStyle = `rgba(224, 90, 40, ${heat})`
+  round(ctx, x + 36, GROUND - 120, 100, 70, 6)
+  ctx.fill()
+  ctx.fillStyle = '#1a1a1a'
+  ctx.beginPath()
+  ctx.moveTo(x + 24, GROUND - 16)
+  ctx.lineTo(x + 50, GROUND - 48)
+  ctx.lineTo(x + 90, GROUND - 16)
+  ctx.fill()
 }
 
 function drawSolid(ctx: CanvasRenderingContext2D, g: Game, s: Game['solids'][number]): void {
@@ -358,6 +493,12 @@ function drawSolid(ctx: CanvasRenderingContext2D, g: Game, s: Game['solids'][num
     ctx.fill()
     ctx.fillStyle = '#f0c36a'
     ctx.fillRect(s.x + 6, s.y + 4, s.w - 12, 3)
+  } else if (s.kind === 'ladder') {
+    ctx.fillStyle = '#8a5a32'
+    ctx.fillRect(s.x, s.y, 4, s.h)
+    ctx.fillRect(s.x + s.w - 4, s.y, 4, s.h)
+    ctx.fillStyle = '#e0b15a'
+    for (let y = s.y + 10; y < s.y + s.h - 6; y += 16) ctx.fillRect(s.x, y, s.w, 3)
   }
   ctx.restore()
 }
@@ -1079,7 +1220,7 @@ function drawPause(ctx: CanvasRenderingContext2D, g: Game): void {
   ctx.fillText(g.levelName, VIEW_W / 2, 150)
   ctx.font = `13px ${FONT}`
   ctx.fillText('Crouch under high shots. Jump the low ones.', VIEW_W / 2, 180)
-  ctx.fillText('Dash across the couplers. Shoot the crates.', VIEW_W / 2, 200)
+  ctx.fillText('Hold Up on a ladder to take the roof.', VIEW_W / 2, 200)
 }
 
 function drawComplete(ctx: CanvasRenderingContext2D, g: Game): void {

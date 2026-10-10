@@ -2,6 +2,7 @@ import { buyWeapon } from './armory'
 import { CEILING_Y, CROUCH_H, GROUND, HIGH_SHOT_Y, LOW_SHOT_Y, STAND_H, BULLET_H, PLAYER_W } from './constants'
 import { createAutopilot } from './autopilot'
 import { shieldVerdict } from './combat'
+import { difficultyCap, levelPlan } from './chunks'
 import { buildLevel, createGame, loadLevel } from './levels'
 import { overlaps } from './physics'
 import { defaultSave, encodeSave } from './save'
@@ -95,6 +96,58 @@ function assertArmorySave(): void {
   }
 }
 
+function assertVariety(): void {
+  let previous = ''
+  for (const chapter of [1, 2] as const) {
+    for (let id = 1; id <= 22; id++) {
+      const plan = levelPlan(id, chapter)
+      if (plan.chunks.length < 2) throw new Error(`car ${chapter}-${id} is a single section`)
+      const ids = plan.chunks.map((chunk) => chunk.id)
+      if (new Set(ids).size !== ids.length) throw new Error(`car ${chapter}-${id} repeats a chunk`)
+      for (const chunk of plan.chunks) {
+        if (chunk.id === previous) throw new Error(`chunk ${chunk.id} repeats across ${chapter}-${id}`)
+        previous = chunk.id
+        if (chunk.tags.length < 2) throw new Error(`${chunk.id} is a single-obstacle section`)
+        if (chunk.difficulty > difficultyCap(id)) throw new Error(`${chunk.id} is too hard for car ${id}`)
+      }
+      const hardest = Math.max(...plan.chunks.map((chunk) => chunk.difficulty))
+      if (id === 1 && hardest !== 1) throw new Error('car 1 should stay on easy combos')
+      if (id >= 4 && hardest < 2) throw new Error(`car ${id} did not step up from car 1`)
+      if (id >= 6 && !plan.boss && hardest < 3) throw new Error(`car ${id} is still an early combo`)
+      if (id >= 12 && !plan.boss && hardest < 4) throw new Error(`car ${id} never reaches a hard combo`)
+      const built = buildLevel(id, chapter)
+      const skins = new Set(built.cars.map((car) => car.skin))
+      if (skins.size < 2) throw new Error(`car ${chapter}-${id} uses one interior`)
+    }
+  }
+  const mixed = buildLevel(3)
+  const floors = mixed.solids.filter((solid) => solid.kind === 'floor')
+  const hasGap = floors.some((floor, index) =>
+    floors.slice(index + 1).some((next) => next.x > floor.x + floor.w + 40 && next.x < floor.x + floor.w + 400),
+  )
+  if (!mixed.solids.some((solid) => solid.kind === 'steel' && solid.h > 200)) throw new Error('car 3 should crawl into the gap')
+  if (!mixed.enemies.some((enemy) => enemy.kind === 'drone') || !hasGap) throw new Error('car 3 should put a drone over a gap')
+  const roof = buildLevel(2)
+  if (!roof.solids.some((solid) => solid.kind === 'ladder')) throw new Error('car 2 should have a ladder')
+  if (!roof.solids.some((solid) => solid.kind === 'platform' && solid.y < GROUND - 140)) throw new Error('car 2 should have a roof')
+  if (!roof.enemies.some((enemy) => enemy.kind === 'shooter') || !roof.solids.some((solid) => solid.h >= 100 && solid.destructible)) {
+    throw new Error('car 2 should mix a plate with fire')
+  }
+  const nest = buildLevel(11)
+  if (!nest.enemies.some((enemy) => enemy.kind === 'sniper') || !nest.solids.some((solid) => solid.kind === 'ladder')) {
+    throw new Error('car 11 should flank a sniper from the roof')
+  }
+  const ride = buildLevel(7)
+  const riding = ride.solids.filter((solid) => solid.move === 'sine-x' && solid.destructible)
+  if (riding.length < 2 || !ride.enemies.some((enemy) => enemy.kind === 'shield')) {
+    throw new Error('car 7 should stack crates on a sled guarded by a shield')
+  }
+  const tunnel = buildLevel(2, 2)
+  if (!tunnel.hazards.some((hazard) => hazard.kind === 'rail') || !tunnel.solids.some((solid) => solid.kind === 'steel' && solid.h > 200)) {
+    throw new Error('snow car 2 should crouch a live rail')
+  }
+}
+
 function assertChapter(): void {
   if (buildLevel(5, 2).boss !== 'ram' || buildLevel(10, 2).boss !== 'hawk' || buildLevel(15, 2).boss !== 'summit') {
     throw new Error('snow bosses are in the wrong cars')
@@ -164,9 +217,32 @@ function assertArenas(): void {
   }
 }
 
+function assertClimb(): void {
+  const game = createGame(defaultSave())
+  loadLevel(game, 2)
+  const ladder = game.solids.find((solid) => solid.kind === 'ladder')
+  const roof = game.solids.find((solid) => solid.kind === 'platform' && solid.y < GROUND - 140)
+  if (!ladder || !roof) throw new Error('car 2 is missing a roof route')
+  game.player.x = ladder.x - 2
+  game.player.y = GROUND - STAND_H
+  const input = emptyInput()
+  input.jump = true
+  for (let i = 0; i < 150; i++) update(game, input, 1 / 60)
+  if (game.player.y + game.player.h > roof.y + 8) {
+    throw new Error(`ladder did not reach the roof y=${game.player.y.toFixed(1)} roof=${roof.y}`)
+  }
+  input.jump = false
+  for (let i = 0; i < 40; i++) update(game, input, 1 / 60)
+  if (!game.player.onGround || Math.abs(game.player.y + game.player.h - roof.y) > 6) {
+    throw new Error(`roof did not catch the climber y=${game.player.y.toFixed(1)} ground=${game.player.onGround}`)
+  }
+}
+
 assertDodgeRules()
 assertShield()
+assertClimb()
 assertArmorySave()
+assertVariety()
 assertChapter()
 assertArenas()
 const generated = buildLevel(20)

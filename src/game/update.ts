@@ -286,28 +286,53 @@ function updatePlayer(g: Game, input: InputState, dt: number): void {
     if (dir !== 0 && p.dashT <= 0) p.facing = dir as 1 | -1
   }
 
-  if (input.jumpPressed) p.jumpBuf = JUMP_BUFFER
-  if (p.jumpBuf > 0 && (p.onGround || p.coyote > 0)) {
-    if (p.crouching) applyStance(g, false)
-    if (!p.crouching) {
-      p.vy = JUMP_V
-      p.onGround = false
-      p.coyote = 0
+  const ladder = g.solids.find((s) => s.kind === 'ladder' && s.hp > 0 && overlap(p, s))
+  const atTop = !!ladder && p.y + p.h <= ladder.y + 2
+  const wantUp = input.jump || input.jumpPressed
+  const wantDown = input.crouch
+  let climbing = false
+  if (ladder && p.dashT <= 0 && p.slideT <= 0) {
+    if (wantDown && !wantUp) {
+      climbing = true
+      p.vy = 150
+    } else if (wantUp && !atTop) {
+      climbing = true
+      p.vy = -170
       p.jumpBuf = 0
-      p.jumpCut = false
-      p.slideT = 0
-      g.stats.jumps++
-      burst(g, p.x + 6, p.y + p.h, '#e6d3b4', 4, 50)
-      g.onSfx?.('jump')
+    } else if (atTop && !wantDown && p.vy < 0) {
+      p.vy = 0
+    }
+    if (climbing) {
+      const mid = ladder.x + ladder.w / 2 - p.w / 2
+      const step = Math.min(Math.abs(mid - p.x), 140 * dt)
+      p.x += Math.sign(mid - p.x) * step
     }
   }
-  if (!input.jump && p.vy < 0 && !p.jumpCut) {
-    p.vy *= 0.48
-    p.jumpCut = true
-  }
 
-  if (!p.onGround) p.vy = Math.min(MAX_FALL, p.vy + GRAVITY * dt)
-  else if (p.vy > 0) p.vy = 0
+  if (!climbing) {
+    if (input.jumpPressed) p.jumpBuf = JUMP_BUFFER
+    if (p.jumpBuf > 0 && (p.onGround || p.coyote > 0)) {
+      if (p.crouching) applyStance(g, false)
+      if (!p.crouching) {
+        p.vy = JUMP_V
+        p.onGround = false
+        p.coyote = 0
+        p.jumpBuf = 0
+        p.jumpCut = false
+        p.slideT = 0
+        g.stats.jumps++
+        burst(g, p.x + 6, p.y + p.h, '#e6d3b4', 4, 50)
+        g.onSfx?.('jump')
+      }
+    }
+    if (!input.jump && p.vy < 0 && !p.jumpCut) {
+      p.vy *= 0.48
+      p.jumpCut = true
+    }
+
+    if (!p.onGround) p.vy = Math.min(MAX_FALL, p.vy + GRAVITY * dt)
+    else if (p.vy > 0) p.vy = 0
+  }
   applyWind(g, dt)
 
   const wasGround = p.onGround
