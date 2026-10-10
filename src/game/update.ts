@@ -1,14 +1,11 @@
 import {
   AIR_ACCEL,
   BULLET_H,
-  BULLET_SPEED,
   COYOTE,
   CROUCH_H,
   CROUCH_SPEED,
-  DASH_COOLDOWN,
   DASH_SPEED,
   DASH_TIME,
-  FIRE_COOLDOWN,
   GRAVITY,
   GROUND,
   GROUND_ACCEL,
@@ -16,24 +13,23 @@ import {
   HURT_TIME,
   JUMP_BUFFER,
   JUMP_V,
-  MAG_SIZE,
   MAX_FALL,
-  MAX_HP,
   MOVE_SPEED,
-  RELOAD_TIME,
   SCORE_CHEST,
   SCORE_GEM,
   SLIDE_SPEED,
   SLIDE_TIME,
   STAND_H,
   VIEW_H,
+  VIEW_W,
 } from './constants'
+import { buyUpgrade, buyWeapon, cycleWeapon, dashCooldown, equip, fireCooldown, magSize, reloadTime, specOf, WEAPONS } from './armory'
 import { updateBoss } from './bosses'
-import { burst, damageSolid, fireBullet, floatText, gunOrigin, hurtPlayer, killEnemy, shotY } from './combat'
+import { burst, damageSolidHit, explode, fireBullet, floatText, gunOrigin, hurtPlayer, killEnemy, shieldVerdict, shotY } from './combat'
 import { loadLevel } from './levels'
 import { blocks, lineBlocked, moveBody, pistonExt, pistonT } from './physics'
 import { saveFromGame } from './save'
-import type { Enemy, Game, InputState, Solid } from './types'
+import type { Enemy, Game, InputState, Solid, WeaponId } from './types'
 import { hitButton, layoutButtons } from './ui'
 
 export function update(g: Game, input: InputState, dt: number): void {
@@ -53,10 +49,20 @@ export function update(g: Game, input: InputState, dt: number): void {
     return
   }
   if (g.mode === 'complete') {
+    if (pressed(g, input, 'armory')) {
+      g.mode = 'armory'
+      g.armoryFrom = 'next'
+      g.onSfx?.('ui')
+      return
+    }
     if (input.confirmPressed || pressed(g, input, 'nextlevel')) {
       loadLevel(g, g.levelId + 1)
       g.onSfx?.('ui')
     }
+    return
+  }
+  if (g.mode === 'armory') {
+    updateArmory(g, input)
     return
   }
   if (g.mode === 'gameover') {
@@ -72,8 +78,28 @@ function pressed(g: Game, input: InputState, id: string): boolean {
   return hitButton(layoutButtons(g), input.clickX, input.clickY) === id
 }
 
+function chapterCap(g: Game): number {
+  return g.selectedChapter === 2 ? Math.max(1, g.chapter2) : Math.max(1, g.unlocked)
+}
+
 function updateTitle(g: Game, input: InputState): void {
-  const max = Math.max(1, g.unlocked)
+  const max = chapterCap(g)
+  if (pressed(g, input, 'ch1')) {
+    g.selectedChapter = 1
+    g.selectedLevel = Math.min(g.selectedLevel, Math.max(1, g.unlocked))
+    g.onSfx?.('ui')
+  }
+  if (pressed(g, input, 'ch2') && g.chapter2 > 0) {
+    g.selectedChapter = 2
+    g.selectedLevel = Math.min(Math.max(1, g.selectedLevel), g.chapter2)
+    g.onSfx?.('ui')
+  }
+  if (pressed(g, input, 'armory') && g.unlocked > 1) {
+    g.mode = 'armory'
+    g.armoryFrom = 'title'
+    g.onSfx?.('ui')
+    return
+  }
   if (input.leftPressed || pressed(g, input, 'prev')) {
     g.selectedLevel = Math.max(1, g.selectedLevel - 1)
     g.onSfx?.('ui')
@@ -85,10 +111,36 @@ function updateTitle(g: Game, input: InputState): void {
   if (input.confirmPressed || pressed(g, input, 'start')) {
     g.score = 0
     g.runTreasure = 0
+    g.chapter = g.selectedChapter
     g.stats = { jumps: 0, dashes: 0, crouchTime: 0, shots: 0, cratesBroken: 0, bosses: 0 }
     loadLevel(g, g.selectedLevel)
     g.onSfx?.('ui')
   }
+}
+
+function updateArmory(g: Game, input: InputState): void {
+  switchWeapon(g, input)
+  for (const id of WEAPONS) {
+    if (pressed(g, input, `gun-${id}`)) buyWeapon(g, id)
+  }
+  for (const id of ['damage', 'rate', 'ammo', 'health', 'dash', 'armor'] as const) {
+    if (pressed(g, input, `up-${id}`)) buyUpgrade(g, id)
+  }
+  if (input.confirmPressed || pressed(g, input, 'continue') || pressed(g, input, 'back')) {
+    saveFromGame(g)
+    if (g.armoryFrom === 'next') loadLevel(g, g.levelId + 1)
+    else g.mode = 'title'
+    g.onSfx?.('ui')
+  }
+}
+
+function switchWeapon(g: Game, input: InputState): void {
+  if (input.weaponSlot >= 1 && input.weaponSlot <= WEAPONS.length) {
+    const id = WEAPONS[input.weaponSlot - 1] as WeaponId
+    if (g.owned.includes(id) && id !== g.weapon) equip(g, id)
+  }
+  if (input.wheel > 0) cycleWeapon(g, 1)
+  else if (input.wheel < 0) cycleWeapon(g, -1)
 }
 
 function updatePaused(g: Game, input: InputState): void {
@@ -117,6 +169,7 @@ function toTitle(g: Game): void {
 }
 
 function updatePlaying(g: Game, input: InputState, dt: number): void {
+  switchWeapon(g, input)
   if (input.pausePressed || pressed(g, input, 'pause')) {
     g.mode = 'paused'
     g.onSfx?.('ui')
@@ -126,12 +179,14 @@ function updatePlaying(g: Game, input: InputState, dt: number): void {
   g.messageT = Math.max(0, g.messageT - dt)
   updateMovers(g, dt)
   updatePlayer(g, input, dt)
+  updateHazards(g, dt)
   updateEnemies(g, dt)
   updateBullets(g, dt)
   updateDynamics(g, dt)
   updatePickups(g, dt)
   updateBossUnlock(g, dt)
   updateFx(g, dt)
+  containBossArena(g)
   updateCamera(g, dt)
 }
 
@@ -184,12 +239,12 @@ function updatePlayer(g: Game, input: InputState, dt: number): void {
     p.reloadT -= dt
     if (p.reloadT <= 0) {
       p.reloading = false
-      p.ammo = MAG_SIZE
+      p.ammo = magSize(g)
       g.onSfx?.('reload')
     }
-  } else if (input.reloadPressed && p.ammo < MAG_SIZE) {
+  } else if (input.reloadPressed && p.ammo < magSize(g)) {
     p.reloading = true
-    p.reloadT = RELOAD_TIME
+    p.reloadT = reloadTime(g)
   }
 
   if (input.crouch && !p.crouching && p.onGround && Math.abs(p.vx) > 150) {
@@ -206,7 +261,7 @@ function updatePlayer(g: Game, input: InputState, dt: number): void {
     const dashDir = dir !== 0 ? dir : p.facing
     p.facing = dashDir as 1 | -1
     p.dashT = DASH_TIME
-    p.dashCd = DASH_COOLDOWN
+    p.dashCd = dashCooldown(g)
     p.vx = dashDir * DASH_SPEED
     g.stats.dashes++
     g.shake = Math.max(g.shake, 3)
@@ -253,6 +308,7 @@ function updatePlayer(g: Game, input: InputState, dt: number): void {
 
   if (!p.onGround) p.vy = Math.min(MAX_FALL, p.vy + GRAVITY * dt)
   else if (p.vy > 0) p.vy = 0
+  applyWind(g, dt)
 
   const wasGround = p.onGround
   const moved = moveBody(p, g.solids, dt)
@@ -284,7 +340,7 @@ function updatePlayer(g: Game, input: InputState, dt: number): void {
     if (p.trail.length > 6) p.trail.shift()
   }
 
-  tryShoot(g, input)
+  tryShoot(g, input, dt)
   updateCheckpoint(g)
 }
 
@@ -309,24 +365,72 @@ function applyStance(g: Game, wantCrouch: boolean): void {
   }
 }
 
-function tryShoot(g: Game, input: InputState): void {
+function tryShoot(g: Game, input: InputState, dt: number): void {
   const p = g.player
+  const spec = specOf(g.weapon)
+  if (spec.style === 'charge') {
+    if (input.shoot && !p.reloading && p.ammo > 0) {
+      p.charge = Math.min(1, p.charge + dt / 0.55)
+      return
+    }
+    if (p.charge <= 0.04 && !input.shootPressed) return
+    const charge = p.charge
+    p.charge = 0
+    if (p.reloading || p.ammo <= 0 || p.fireCd > 0) {
+      if (p.reloading || p.ammo <= 0) g.onSfx?.('dry')
+      return
+    }
+    const origin = gunOrigin(p)
+    const damage = spec.damage + g.ranks.damage + Math.floor(charge * 3)
+    fireBullet(g, origin.x, origin.y, p.facing * spec.speed, 0, true, 'any', false, {
+      damage,
+      kind: 'laser',
+      pierce: spec.pierce,
+      life: spec.life,
+      w: 28,
+      h: 8,
+    })
+    spendRound(g)
+    return
+  }
   if (!input.shoot && !input.shootPressed) return
   if (p.reloading || p.ammo <= 0 || p.fireCd > 0) {
     if (input.shootPressed && (p.reloading || p.ammo <= 0)) g.onSfx?.('dry')
     return
   }
   const origin = gunOrigin(p)
-  fireBullet(g, origin.x, origin.y, p.facing * BULLET_SPEED, 0, true, 'any')
+  const pellets = spec.pellets + (spec.pellets > 1 ? g.ranks.damage : 0)
+  const damage = spec.damage + (spec.pellets > 1 ? 0 : g.ranks.damage)
+  for (let i = 0; i < pellets; i++) {
+    const spread = spec.spread === 0 ? 0 : (i - (pellets - 1) / 2) * spec.spread
+    const speed = spec.speed
+    const vx = Math.cos(spread) * p.facing * speed
+    const vy = Math.sin(spread) * speed * 0.55
+    fireBullet(g, origin.x, origin.y, vx, vy, true, 'any', spec.gravity, {
+      damage,
+      kind: spec.style === 'rocket' ? 'rocket' : spec.pellets > 1 ? 'pellet' : 'slug',
+      blast: spec.blast,
+      metal: spec.metal,
+      life: spec.life,
+      w: spec.style === 'rocket' ? 16 : undefined,
+      h: spec.style === 'rocket' ? 8 : undefined,
+    })
+  }
+  spendRound(g)
+}
+
+function spendRound(g: Game): void {
+  const p = g.player
+  const origin = gunOrigin(p)
   p.ammo--
-  p.fireCd = FIRE_COOLDOWN
+  p.fireCd = fireCooldown(g)
   p.shootFlash = 0.07
   g.stats.shots++
   burst(g, origin.x + (p.facing === 1 ? 10 : 0), origin.y, '#ffe1a0', 3, 40)
   g.onSfx?.('shoot')
   if (p.ammo <= 0) {
     p.reloading = true
-    p.reloadT = RELOAD_TIME
+    p.reloadT = reloadTime(g)
   }
 }
 
@@ -371,12 +475,15 @@ function updateEnemies(g: Game, dt: number): void {
     }
     if (e.kind === 'boss') {
       updateBoss(g, e, dt)
-      if (e.boss !== 'turret') groundEnemy(g, e, dt)
-      else e.y = GROUND - e.h
+      if (e.boss === 'turret') e.y = GROUND - e.h
+      else if (e.boss !== 'hawk') groundEnemy(g, e, dt)
       damageTouch(g, e)
       continue
     }
     if (e.kind === 'drone') updateDrone(g, e, dt)
+    else if (e.kind === 'sniper') updateSniper(g, e, dt)
+    else if (e.kind === 'dasher') updateDasher(g, e, dt)
+    else if (e.kind === 'grenadier') updateGrenadier(g, e, dt)
     else updateWalker(g, e, dt)
     damageTouch(g, e)
     if (e.hp <= 0) killEnemy(g, e)
@@ -411,10 +518,15 @@ function updateWalker(g: Game, e: Enemy, dt: number): void {
     (s) => (s.kind === 'floor' || s.kind === 'platform') && ahead >= s.x && ahead <= s.x + s.w && Math.abs(s.y - GROUND) < 30,
   )
   if (!floorAhead) e.facing = e.facing === 1 ? -1 : 1
-  e.vx = e.facing * e.speed
+  const pace = e.kind === 'heavy' ? Math.min(e.speed, 42) : e.speed
+  e.vx = e.facing * pace
   const prevVx = e.vx
   groundEnemy(g, e, dt)
   if (prevVx !== 0 && Math.abs(e.vx) < 4) e.facing = e.facing === 1 ? -1 : 1
+
+  if (e.kind === 'shield' && Math.abs(g.player.x - e.x) < 520) {
+    e.facing = g.player.x + g.player.w / 2 < e.x + e.w / 2 ? -1 : 1
+  }
 
   if (e.kind === 'shooter') {
     e.cooldown -= dt
@@ -451,6 +563,79 @@ function updateDrone(g: Game, e: Enemy, dt: number): void {
   }
 }
 
+function updateSniper(g: Game, e: Enemy, dt: number): void {
+  e.vx = 0
+  e.y = GROUND - e.h
+  e.phaseT += dt
+  const px = g.player.x + g.player.w / 2
+  e.facing = px < e.x ? -1 : 1
+  if (e.phase === 'aim') {
+    e.beam = true
+    if (e.phaseT > 0.62) {
+      const dir = e.facing
+      const y = g.player.crouching ? g.player.y + 8 : g.player.y + 16
+      fireBullet(g, dir === 1 ? e.x + e.w : e.x - 14, y, dir * 920, 0, false, 'high', false, { damage: 1, life: 1.2 })
+      g.onSfx?.('shoot')
+      e.beam = false
+      e.phase = 'cool'
+      e.phaseT = 0
+    }
+  } else if (e.phaseT > e.shotInterval) {
+    e.phase = 'aim'
+    e.phaseT = 0
+    g.onSfx?.('ui')
+  }
+}
+
+function updateDasher(g: Game, e: Enemy, dt: number): void {
+  const px = g.player.x + g.player.w / 2
+  const dist = Math.abs(px - (e.x + e.w / 2))
+  if (e.phase === 'dash') {
+    e.phaseT -= dt
+    e.vx = e.facing * 460
+    groundEnemy(g, e, dt)
+    if (e.phaseT <= 0) {
+      e.phase = 'recover'
+      e.phaseT = 0.85
+    }
+    return
+  }
+  updateWalker(g, e, dt)
+  if (e.phase === 'recover') {
+    e.phaseT -= dt
+    e.vx = e.facing * e.speed * 0.35
+    if (e.phaseT <= 0) e.phase = 'chase'
+    return
+  }
+  if (dist < 320 && dist > 48) {
+    e.phase = 'dash'
+    e.phaseT = 0.28
+    e.facing = px < e.x ? -1 : 1
+  }
+}
+
+function updateGrenadier(g: Game, e: Enemy, dt: number): void {
+  updateWalker(g, e, dt)
+  e.vx = e.facing * Math.min(Math.abs(e.speed), 36) * Math.sign(e.vx || e.facing)
+  e.cooldown -= dt
+  const px = g.player.x + g.player.w / 2
+  const dist = Math.abs(px - (e.x + e.w / 2))
+  if (e.cooldown <= 0 && dist < 520 && dist > 70) {
+    e.facing = px < e.x ? -1 : 1
+    const dx = px - (e.x + e.w / 2)
+    fireBullet(g, e.x + e.w / 2, e.y + 8, dx * 0.9, -380, false, 'any', true, {
+      kind: 'grenade',
+      blast: 46,
+      damage: 1,
+      life: 2.2,
+      w: 12,
+      h: 12,
+    })
+    e.cooldown = Math.max(1.15, e.shotInterval)
+    g.onSfx?.('shoot')
+  }
+}
+
 function damageTouch(g: Game, e: Enemy): void {
   if (!e.alive) return
   if (overlap(g.player, e)) hurtPlayer(g, 1)
@@ -470,6 +655,39 @@ function beamRect(g: Game, e: Enemy): { x: number; y: number; w: number; h: numb
   return { x: left, y, w, h: BULLET_H }
 }
 
+function detonate(g: Game, b: Game['bullets'][number]): void {
+  if (b.blast <= 0) return
+  explode(g, b.x + b.w / 2, b.y + b.h / 2, b.blast, Math.max(1, b.damage), b.friendly, b.metal)
+  b.blast = 0
+}
+
+function applyWind(g: Game, dt: number): void {
+  const p = g.player
+  for (const h of g.hazards) {
+    if (h.kind !== 'wind') continue
+    if (!overlap(p, h)) continue
+    const gust = Math.sin(g.levelTime * h.period + h.phase)
+    if (gust > 0.2) p.vx -= 1400 * gust * dt
+  }
+}
+
+function updateHazards(g: Game, dt: number): void {
+  const p = g.player
+  for (const h of g.hazards) {
+    if (h.kind === 'rail') {
+      const live = Math.sin(g.levelTime * h.period + h.phase) > 0.05
+      if (live && p.alive && p.deadT <= 0 && overlap(p, h)) hurtPlayer(g, 1)
+    } else if (h.kind === 'debris') {
+      h.timer -= dt
+      if (h.timer <= 0) {
+        h.timer = h.period
+        const x = h.x + ((Math.sin(g.levelTime + h.phase) * 0.5 + 0.5) * Math.max(10, h.w - 16))
+        fireBullet(g, x, h.y, 30, 90, false, 'any', true, { kind: 'shard', damage: 1, w: 12, h: 12, life: 2.6 })
+      }
+    }
+  }
+}
+
 function updateBullets(g: Game, dt: number): void {
   for (const b of g.bullets) {
     if (b.life <= 0) continue
@@ -478,12 +696,14 @@ function updateBullets(g: Game, dt: number): void {
     b.x += b.vx * dt
     b.y += b.vy * dt
     if (b.y > VIEW_H || b.x < -80 || b.x > g.levelWidth + 80) {
+      detonate(g, b)
       b.life = 0
       continue
     }
     for (const s of g.solids) {
-      if (s.kind === 'floor' || s.kind === 'platform') {
+      if (s.kind === 'floor' || s.kind === 'platform' || s.kind === 'cargo') {
         if (overlap(b, s)) {
+          detonate(g, b)
           b.life = 0
           break
         }
@@ -491,12 +711,13 @@ function updateBullets(g: Game, dt: number): void {
       }
       if (!blocks(s) || s.oneWay || s.kind === 'piston') continue
       if (!overlap(b, s)) continue
-      if (s.destructible) damageSolid(g, s.id, b.damage)
+      if (s.destructible) damageSolidHit(g, s.id, b.damage, b.metal)
       else {
         s.hitFlash = 0.06
         burst(g, b.x, b.y, '#d5dde8', 3, 50)
         g.onSfx?.('metal')
       }
+      detonate(g, b)
       b.life = 0
       break
     }
@@ -507,19 +728,33 @@ function updateBullets(g: Game, dt: number): void {
         if (e.intro > 0 && e.kind === 'boss') {
           burst(g, b.x, b.y, '#f0e2bf', 4, 40)
           g.onSfx?.('metal')
+          detonate(g, b)
           b.life = 0
           break
         }
-        e.hp -= b.damage
+        if (shieldVerdict(e, b) === 'block') {
+          burst(g, b.x, b.y, '#9ad0ff', 4, 40)
+          g.onSfx?.('metal')
+          b.life = 0
+          break
+        }
+        let amount = b.damage
+        if (e.armor > 0 && b.kind !== 'rocket' && b.kind !== 'laser') amount = Math.max(1, amount - e.armor)
+        e.hp -= amount
         e.hurtT = 0.08
         burst(g, b.x, b.y, '#f2f6fb', 4, 60)
         g.onSfx?.('hit')
-        b.life = 0
+        if (b.pierce > 0) b.pierce -= 1
+        else {
+          detonate(g, b)
+          b.life = 0
+        }
         if (e.hp <= 0) killEnemy(g, e)
-        break
+        if (b.life <= 0) break
       }
     } else if (g.player.alive && g.player.deadT <= 0 && overlap(b, g.player)) {
       hurtPlayer(g, 1)
+      detonate(g, b)
       b.life = 0
     }
   }
@@ -577,12 +812,12 @@ function updatePickups(g: Game, dt: number): void {
     if (!near) continue
     item.taken = true
     if (item.kind === 'ammo') {
-      p.ammo = MAG_SIZE
+      p.ammo = magSize(g)
       p.reloading = false
       floatText(g, item.x, item.y, 'RELOAD', '#f0c36a')
       g.onSfx?.('pickup')
     } else if (item.kind === 'heart') {
-      p.hp = Math.min(MAX_HP, p.hp + 2)
+      p.hp = Math.min(p.maxHp, p.hp + 2)
       floatText(g, item.x, item.y, '+HP', '#e85d4c')
       g.onSfx?.('pickup')
     } else if (item.kind === 'gem') {
@@ -608,7 +843,15 @@ function collectChest(g: Game, x: number, y: number): void {
   g.score += bonus
   g.levelScore += bonus
   g.lifetimeTreasure += g.levelTreasure
-  if (g.levelId >= g.unlocked) g.unlocked = g.levelId + 1
+  g.coins += g.levelTreasure
+  if (g.chapter === 2) {
+    if (g.levelId >= g.chapter2) g.chapter2 = g.levelId + 1
+  } else if (g.levelId >= g.unlocked) g.unlocked = g.levelId + 1
+  if (g.chapter === 1 && g.levelId >= 15 && g.chapter2 < 1) {
+    g.chapter2 = 1
+    g.message = 'SNOW LINE UNLOCKED'
+    g.messageT = 2.4
+  }
   if (g.score > g.highScore) g.highScore = g.score
   saveFromGame(g)
   floatText(g, x, y, 'HAUL', '#ffd76a')
@@ -649,12 +892,51 @@ function updateFx(g: Game, dt: number): void {
   g.player.trail = g.player.trail.filter((t) => t.life > 0)
 }
 
+function containBossArena(g: Game): void {
+  const p = g.player
+  const right = g.arena ? g.arena.x + g.arena.w : Infinity
+  for (const e of g.enemies) {
+    if (e.kind !== 'boss' || !e.alive) continue
+    if (e.x + e.w > right) {
+      e.x = right - e.w
+      if (e.vx > 0) e.vx = 0
+    }
+  }
+  const boss = g.enemies.find((e) => e.kind === 'boss' && e.alive)
+  if (boss && p.alive && p.x + p.w > boss.x) {
+    const next = boss.x - p.w
+    if (bodyFits(g, next, p.y, p.w, p.h)) {
+      p.x = next
+      if (p.vx > 0) p.vx = 0
+    } else {
+      boss.x = Math.min(right - boss.w, p.x + p.w)
+      if (boss.vx < 0) boss.vx = 0
+    }
+  }
+  if (p.alive && p.x + p.w > right) {
+    p.x = right - p.w
+    if (p.vx > 0) p.vx = 0
+  }
+}
+
+function bodyFits(g: Game, x: number, y: number, w: number, h: number): boolean {
+  const box = { x, y, w, h }
+  return !g.solids.some((s) => blocks(s) && !s.oneWay && s.kind !== 'floor' && overlap(box, s))
+}
+
 function updateCamera(g: Game, dt: number): void {
   const p = g.player
+  if (g.arena && p.x > g.arena.x + 24) g.arenaLock = true
   const look = p.facing * 80
-  const max = Math.max(0, g.levelWidth - 960)
-  const target = Math.max(0, Math.min(max, p.x + p.w / 2 - 960 * 0.36 + look))
+  let min = 0
+  let max = Math.max(0, g.levelWidth - VIEW_W)
+  if (g.arenaLock && g.arena) {
+    min = Math.max(0, g.arena.x)
+    max = Math.max(min, g.arena.x + g.arena.w - VIEW_W)
+  }
+  const target = Math.max(min, Math.min(max, p.x + p.w / 2 - VIEW_W * 0.36 + look))
   g.camX += (target - g.camX) * Math.min(1, dt * 5)
+  if (g.arenaLock && g.arena) g.camX = Math.max(min, Math.min(max, g.camX))
 }
 
 function overlap(a: { x: number; y: number; w: number; h: number }, b: { x: number; y: number; w: number; h: number }): boolean {

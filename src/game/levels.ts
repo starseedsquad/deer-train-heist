@@ -13,7 +13,9 @@ import {
 } from './constants'
 import { bossLabel, bossSize } from './combat'
 import { mulberry32 } from './rng'
-import type { BossId, Decal, Enemy, Game, Pickup, ShotStyle, Solid } from './types'
+import { applyLoadout } from './armory'
+import type { SaveData } from './save'
+import type { Arena, BossId, ChapterId, Decal, Enemy, Game, Hazard, Pickup, ShotStyle, Solid } from './types'
 import { emptyStats } from './types'
 
 export interface LevelInfo {
@@ -36,9 +38,11 @@ class Builder {
   enemies: Enemy[] = []
   pickups: Pickup[] = []
   decals: Decal[] = []
+  hazards: Hazard[] = []
   cursor = 0
   nextId = 1
   hasBoss = false
+  arena: Arena | null = null
 
   addSolid(partial: Pick<Solid, 'kind' | 'x' | 'y' | 'w' | 'h'> & Partial<Solid>): Solid {
     const s: Solid = {
@@ -135,6 +139,19 @@ class Builder {
     })
   }
 
+  /** Full-height bulkhead. Jump and air dash both meet it. */
+  backstop(x: number): void {
+    this.addSolid({
+      kind: 'steel',
+      x,
+      y: -180,
+      w: 46,
+      h: GROUND + 180,
+      destructible: false,
+      anchored: true,
+    })
+  }
+
   piston(x: number, phase = 0): void {
     this.addSolid({
       kind: 'piston',
@@ -197,9 +214,56 @@ class Builder {
     this.enemies.push(enemyBase(this.nextId++, kind, null, '', x, GROUND - h, 36, h, speed, shot, cd, minX, maxX, kind === 'patrol' ? 2 : 3))
   }
 
-  drone(x: number, speed: number, cd: number): void {
+  drone(x: number, speed: number, cd: number, hp = 3): void {
     const y = GROUND - 168
-    this.enemies.push(enemyBase(this.nextId++, 'drone', null, '', x, y, 40, 28, speed, 'mix', cd, x - 80, x + 160, 3))
+    this.enemies.push(enemyBase(this.nextId++, 'drone', null, '', x, y, 40, 28, speed, 'mix', cd, x - 80, x + 160, hp))
+  }
+
+  foe(
+    kind: 'shield' | 'dasher' | 'grenadier' | 'heavy' | 'sniper',
+    x: number,
+    minX: number,
+    maxX: number,
+    speed: number,
+    hp: number,
+    armor = 0,
+  ): void {
+    const tall = kind === 'sniper' || kind === 'heavy'
+    const h = kind === 'sniper' ? 58 : kind === 'heavy' ? 64 : 48
+    const w = kind === 'heavy' ? 52 : kind === 'sniper' ? 34 : 36
+    const y = kind === 'sniper' ? GROUND - h : GROUND - h
+    const e = enemyBase(this.nextId++, kind, null, '', x, y, w, h, speed, 'mix', kind === 'sniper' ? 2.1 : 1.5, minX, maxX, hp)
+    e.armor = armor
+    if (tall) e.baseY = y
+    this.enemies.push(e)
+  }
+
+  cargo(x: number, w: number, amp: number): void {
+    this.addSolid({
+      kind: 'cargo',
+      x,
+      y: GROUND - 78,
+      w,
+      h: 78,
+      move: 'sine-x',
+      originX: x,
+      amp,
+      period: 0.85,
+      destructible: false,
+      anchored: true,
+    })
+  }
+
+  rail(x: number, w: number, phase = 0): void {
+    this.hazards.push({ kind: 'rail', x, y: GROUND - 14, w, h: 16, phase, period: 2.4, timer: 0 })
+  }
+
+  wind(x: number, w: number, phase = 0): void {
+    this.hazards.push({ kind: 'wind', x, y: GROUND - 160, w, h: 160, phase, period: 1.3, timer: 0 })
+  }
+
+  debris(x: number, w: number, phase = 0): void {
+    this.hazards.push({ kind: 'debris', x, y: 40, w, h: 20, phase, period: 2.2, timer: phase })
   }
 
   boss(kind: BossId, x: number, hpMul: number): void {
@@ -276,16 +340,18 @@ function enemyBase(
     beam: false,
     intro: 0,
     onGround: false,
+    armor: 0,
   }
 }
 
-function optsFor(id: number): Opts {
+function optsFor(id: number, chapter: ChapterId = 1): Opts {
+  const n = id + (chapter === 2 ? 8 : 0)
   return {
-    speed: 48 + id * 7,
-    shotCd: Math.max(0.72, 1.85 - id * 0.07),
-    shot: id <= 3 ? 'high' : 'mix',
-    barrierHp: id < 6 ? 3 : id < 11 ? 4 : 5,
-    hpMul: 1 + Math.max(0, Math.floor((id - 5) / 5)) * 0.28,
+    speed: 48 + n * 7,
+    shotCd: Math.max(0.55, 1.85 - n * 0.06),
+    shot: chapter === 1 && id <= 3 ? 'high' : 'mix',
+    barrierHp: n < 6 ? 3 : n < 11 ? 4 : 5,
+    hpMul: (chapter === 2 ? 1.2 : 1) * (1 + Math.max(0, Math.floor((n - 5) / 5)) * 0.28),
   }
 }
 
@@ -430,8 +496,8 @@ function droneLane(b: Builder, o: Opts): void {
   const x = b.cursor
   const w = 700
   b.floor(x, w)
-  b.drone(x + 280, o.speed, Math.max(1.1, o.shotCd))
-  b.drone(x + 520, o.speed * 1.1, Math.max(1.2, o.shotCd + 0.2))
+  b.drone(x + 280, o.speed, Math.max(1.1, o.shotCd), Math.round(3 * o.hpMul))
+  b.drone(x + 520, o.speed * 1.1, Math.max(1.2, o.shotCd + 0.2), Math.round(4 * o.hpMul))
   b.cursor = x + w
 }
 
@@ -487,10 +553,122 @@ function arena(kind: BossId): Part {
       b.crate(x + 300, 0, 1)
       b.crate(x + 390, 0, 2)
     }
-    b.boss(kind, x + w - (kind === 'turret' ? 230 : 200), o.hpMul)
+    const bossX = x + w - (kind === 'turret' ? 230 : 200)
+    b.boss(kind, bossX, o.hpMul)
+    const wall = bossX + 52
+    b.backstop(wall)
+    b.sign(wall - 210, 'SEALED')
+    b.arena = { x, w: wall - x }
     b.chest(x + 140, true)
     b.cursor = x + w
   }
+}
+
+function shieldLane(b: Builder, o: Opts): void {
+  const x = b.cursor
+  const w = 740
+  b.floor(x, w)
+  b.sign(x + 20, 'CROUCH OR FLANK THE SHIELD')
+  b.foe('shield', x + 380, x + 200, x + 580, o.speed * 0.65, Math.round(4 * o.hpMul))
+  b.crate(x + 240, 0, 1)
+  b.gem(x + 640)
+  b.cursor = x + w
+}
+
+function dasherLane(b: Builder, o: Opts): void {
+  const x = b.cursor
+  const w = 700
+  b.floor(x, w)
+  b.sign(x + 20, 'DASHERS LUNGE')
+  b.foe('dasher', x + 420, x + 180, x + 620, o.speed * 0.8, Math.round(3 * o.hpMul))
+  b.cursor = x + w
+}
+
+function grenadeLane(b: Builder, o: Opts): void {
+  const x = b.cursor
+  const w = 760
+  b.floor(x, w)
+  b.sign(x + 20, 'GRENADES ARC')
+  b.foe('grenadier', x + 460, x + 300, x + 640, o.speed * 0.45, Math.round(4 * o.hpMul))
+  b.crate(x + 220, 0, 2)
+  b.cursor = x + w
+}
+
+function heavyLane(b: Builder, o: Opts): void {
+  const x = b.cursor
+  const w = 780
+  b.floor(x, w)
+  b.sign(x + 16, 'ARMOR SHRUGS LIGHT ROUNDS')
+  b.foe('heavy', x + 400, x + 220, x + 640, 32 + o.speed * 0.15, Math.round(12 * o.hpMul), 1)
+  b.barrier(x + 250, o.barrierHp)
+  b.cursor = x + w
+}
+
+function sniperLane(b: Builder, o: Opts): void {
+  const x = b.cursor
+  const w = 820
+  b.floor(x, w)
+  b.sign(x + 20, 'SNIPER TELEGRAPHS')
+  b.foe('sniper', x + 620, x + 560, x + 700, 0, Math.round(4 * o.hpMul))
+  b.crate(x + 280, 0, 1)
+  b.crate(x + 280, 1, 1)
+  b.cursor = x + w
+}
+
+function railLane(b: Builder, o: Opts): void {
+  const x = b.cursor
+  const w = 760
+  b.floor(x, w)
+  b.sign(x + 24, 'LIVE RAIL PULSES')
+  b.rail(x + 180, 220, 0)
+  b.rail(x + 460, 180, 1.4)
+  b.gem(x + 400)
+  b.foe('shield', x + 560, x + 480, x + 700, o.speed * 0.5, Math.round(4 * o.hpMul))
+  b.cursor = x + w
+}
+
+function windGap(b: Builder): void {
+  const x = b.cursor
+  const left = 280
+  const right = 300
+  b.floor(x, left)
+  b.sign(x + 20, 'GUSTS PUSH BACK')
+  b.wind(x + left - 20, GAP_HARD + 40, 0.4)
+  b.floor(x + left + GAP_HARD, right)
+  b.cursor = x + left + GAP_HARD + right
+}
+
+function debrisLane(b: Builder, o: Opts): void {
+  const x = b.cursor
+  const w = 800
+  b.floor(x, w)
+  b.sign(x + 20, 'FALLING ICE')
+  b.debris(x + 180, 160, 0.2)
+  b.debris(x + 420, 180, 1.1)
+  b.foe('dasher', x + 560, x + 400, x + 720, o.speed * 0.7, Math.round(3 * o.hpMul))
+  b.cursor = x + w
+}
+
+function cargoRun(b: Builder): void {
+  const x = b.cursor
+  const w = 840
+  b.floor(x, w)
+  b.sign(x + 20, 'MOVING CARGO')
+  b.cargo(x + 220, 110, 70)
+  b.cargo(x + 480, 90, 90)
+  b.gem(x + 700)
+  b.cursor = x + w
+}
+
+function snowTunnel(b: Builder): void {
+  const x = b.cursor
+  const w = 860
+  b.floor(x, w)
+  b.sign(x + 16, 'WHITE TUNNEL')
+  b.crawl(x + 160, 520)
+  b.crate(x + 280, 0, 1)
+  b.crate(x + 420, 0, 2)
+  b.cursor = x + w
 }
 
 const PRESETS: { name: string; boss: BossId | null; parts: Part[] }[] = [
@@ -500,34 +678,66 @@ const PRESETS: { name: string; boss: BossId | null; parts: Part[] }[] = [
   { name: 'Low Clearance', boss: null, parts: [introShort, crawlCrate, steelCrawl, highShooter, easyGap, hoard] },
   { name: 'Loose Couplers', boss: null, parts: [introShort, medGap, hardGap, pistonRow, shooterLane, hoard] },
   { name: 'Iron Warden', boss: 'mech', parts: [approach, arena('mech')] },
-  { name: 'Dining Wreck', boss: null, parts: [introShort, crateLine, droneLane, metalWall, crawlCrate, medGap, hoard] },
-  { name: 'Sleeper Agent', boss: null, parts: [introShort, mixedCover, shooterLane, steelCrawl, medGap, hoard] },
-  { name: 'Maintenance', boss: null, parts: [introShort, pistonRow, droneLane, hardGap, metalWall, hoard] },
-  { name: 'Open Air', boss: null, parts: [introShort, hardGap, movingGap, shooterLane, medGap, hoard] },
+  { name: 'Dining Wreck', boss: null, parts: [introShort, crateLine, shieldLane, droneLane, metalWall, medGap, hoard] },
+  { name: 'Sleeper Agent', boss: null, parts: [introShort, dasherLane, mixedCover, shooterLane, steelCrawl, medGap, hoard] },
+  { name: 'Maintenance', boss: null, parts: [introShort, grenadeLane, pistonRow, droneLane, hardGap, metalWall, hoard] },
+  { name: 'Open Air', boss: null, parts: [introShort, heavyLane, hardGap, movingGap, shooterLane, medGap, hoard] },
   { name: 'The Conductor', boss: 'conductor', parts: [approach, arena('conductor')] },
-  { name: 'Armored Hold', boss: null, parts: [introShort, metalWall, shooterLane, crawlCrate, droneLane, hoard] },
-  { name: 'Blind Tunnel', boss: null, parts: [introShort, crawlCrate, steelCrawl, crawlCrate, pistonRow, hoard] },
-  { name: 'Crossfire', boss: null, parts: [introShort, shooterLane, mixedCover, droneLane, hardGap, hoard] },
-  { name: 'Redline', boss: null, parts: [introShort, hardGap, pistonRow, shooterLane, droneLane, metalWall, hardGap, hoard] },
+  { name: 'Armored Hold', boss: null, parts: [introShort, sniperLane, metalWall, shieldLane, droneLane, hoard] },
+  { name: 'Blind Tunnel', boss: null, parts: [introShort, crawlCrate, steelCrawl, shieldLane, pistonRow, hoard] },
+  { name: 'Crossfire', boss: null, parts: [introShort, grenadeLane, shooterLane, mixedCover, droneLane, hardGap, hoard] },
+  { name: 'Redline', boss: null, parts: [introShort, heavyLane, hardGap, dasherLane, shooterLane, metalWall, hoard] },
   { name: 'Loco-Lock', boss: 'turret', parts: [approach, arena('turret')] },
 ]
 
-function generated(id: number): { name: string; boss: BossId | null; parts: Part[] } {
-  const rng = mulberry32(id * 9176 + 13)
-  const boss = id % 5 === 0 ? ((['mech', 'conductor', 'turret'] as const)[Math.floor(id / 5) % 3]) : null
-  const pool: Part[] = [crateLine, metalWall, crawlCrate, steelCrawl, easyGap, medGap, hardGap, pistonRow, shooterLane, droneLane, mixedCover, movingGap]
+const SNOW: { name: string; boss: BossId | null; parts: Part[] }[] = [
+  { name: '', boss: null, parts: [] },
+  { name: 'First Snow', boss: null, parts: [introShort, cargoRun, easyGap, hoard] },
+  { name: 'Live Rail', boss: null, parts: [introShort, railLane, crateLine, medGap, hoard] },
+  { name: 'White Tunnel', boss: null, parts: [introShort, snowTunnel, steelCrawl, shieldLane, hoard] },
+  { name: 'Crosswind', boss: null, parts: [introShort, windGap, cargoRun, hardGap, hoard] },
+  { name: 'Glacier Ram', boss: 'ram', parts: [approach, arena('ram')] },
+  { name: 'Icefall', boss: null, parts: [introShort, debrisLane, windGap, droneLane, hoard] },
+  { name: 'Shield Yard', boss: null, parts: [introShort, shieldLane, cargoRun, sniperLane, hoard] },
+  { name: 'Switchback', boss: null, parts: [introShort, cargoRun, medGap, dasherLane, railLane, hoard] },
+  { name: 'Sniper Ridge', boss: null, parts: [introShort, sniperLane, windGap, heavyLane, hoard] },
+  { name: 'Whiteout Hawk', boss: 'hawk', parts: [approach, arena('hawk')] },
+  { name: 'Drift Armor', boss: null, parts: [introShort, heavyLane, debrisLane, grenadeLane, hoard] },
+  { name: 'Coupler Gulch', boss: null, parts: [introShort, grenadeLane, hardGap, railLane, shieldLane, hoard] },
+  { name: 'Night Glass', boss: null, parts: [introShort, snowTunnel, railLane, sniperLane, hoard] },
+  { name: 'Summit Road', boss: null, parts: [introShort, windGap, heavyLane, debrisLane, dasherLane, metalWall, hoard] },
+  { name: 'Summit Breaker', boss: 'summit', parts: [approach, arena('summit')] },
+]
+
+function generated(id: number, chapter: ChapterId): { name: string; boss: BossId | null; parts: Part[] } {
+  const rng = mulberry32(id * 9176 + chapter * 409 + 13)
+  const night: BossId[] = ['mech', 'conductor', 'turret']
+  const snow: BossId[] = ['ram', 'hawk', 'summit']
+  const boss = id % 5 === 0 ? (chapter === 2 ? snow : night)[Math.floor(id / 5) % 3] : null
+  const pool: Part[] =
+    chapter === 2
+      ? [cargoRun, railLane, snowTunnel, windGap, debrisLane, shieldLane, dasherLane, grenadeLane, heavyLane, sniperLane, hardGap, droneLane]
+      : [crateLine, metalWall, crawlCrate, steelCrawl, easyGap, medGap, hardGap, pistonRow, shooterLane, droneLane, mixedCover, movingGap, shieldLane, dasherLane]
   const parts: Part[] = [introShort]
   const n = 5 + (id % 3)
   for (let i = 0; i < n; i++) parts.push(pool[Math.floor(rng() * pool.length)])
   parts.push(boss ? arena(boss) : hoard)
-  const miles = ['Night Mail', 'Caboose', 'Observation', 'Coal Tender', 'Express', 'Local Stop', 'Switchback', 'Sleeper', 'Diner', 'Baggage']
+  const miles =
+    chapter === 2
+      ? ['Spur', 'Siding', 'Cornice', 'Drift', 'Pass', 'Viaduct', 'Couloir', 'Basin', 'Ridge', 'Summit']
+      : ['Night Mail', 'Caboose', 'Observation', 'Coal Tender', 'Express', 'Local Stop', 'Switchback', 'Sleeper', 'Diner', 'Baggage']
   const name = boss ? `${bossLabel(boss)} MK ${Math.ceil(id / 5)}` : `${miles[id % miles.length]} ${id}`
   return { name, boss, parts }
 }
 
-export function describeLevel(id: number): LevelInfo {
+function presetFor(id: number, chapter: ChapterId): { name: string; boss: BossId | null; parts: Part[] } {
+  if (chapter === 2) return id <= 15 ? SNOW[id] : generated(id, 2)
+  return id <= 15 ? PRESETS[id] : generated(id, 1)
+}
+
+export function describeLevel(id: number, chapter: ChapterId = 1): LevelInfo {
   const safe = Math.max(1, id)
-  const preset = safe <= 15 ? PRESETS[safe] : generated(safe)
+  const preset = presetFor(safe, chapter)
   return {
     id: safe,
     name: preset.name,
@@ -542,14 +752,17 @@ export interface BuiltLevel extends LevelInfo {
   enemies: Enemy[]
   pickups: Pickup[]
   decals: Decal[]
+  hazards: Hazard[]
+  arena: Arena | null
   nextId: number
+  chapter: ChapterId
 }
 
-export function buildLevel(id: number): BuiltLevel {
-  const info = describeLevel(id)
-  const preset = id <= 15 ? PRESETS[id] : generated(id)
+export function buildLevel(id: number, chapter: ChapterId = 1): BuiltLevel {
+  const info = describeLevel(id, chapter)
+  const preset = presetFor(id, chapter)
   const b = new Builder()
-  const o = optsFor(id)
+  const o = optsFor(id, chapter)
   for (const part of preset.parts) part(b, o)
   b.addSolid({ kind: 'steel', x: -48, y: 0, w: 48, h: GROUND })
   b.addSolid({ kind: 'steel', x: b.cursor, y: 0, w: 48, h: GROUND })
@@ -560,7 +773,10 @@ export function buildLevel(id: number): BuiltLevel {
     enemies: b.enemies,
     pickups: b.pickups,
     decals: b.decals,
+    hazards: b.hazards,
+    arena: b.arena,
     nextId: b.nextId,
+    chapter,
   }
 }
 
@@ -596,10 +812,13 @@ export function makePlayer(x: number): Game['player'] {
     checkpointX: x,
     checkpointY: GROUND - STAND_H,
     trail: [],
+    charge: 0,
+    maxHp: MAX_HP,
+    armorClock: 0,
   }
 }
 
-export function createGame(save: { unlocked: number; highScore: number; treasure: number; muted: boolean }): Game {
+export function createGame(save: SaveData): Game {
   return {
     mode: 'title',
     levelId: 1,
@@ -625,11 +844,22 @@ export function createGame(save: { unlocked: number; highScore: number; treasure
     timeBonus: 0,
     message: '',
     messageT: 0,
-    selectedLevel: save.unlocked,
+    selectedLevel: save.chapter === 2 && save.chapter2 > 0 ? Math.min(save.chapter2, 15) : save.unlocked,
     unlocked: save.unlocked,
     highScore: save.highScore,
     lifetimeTreasure: save.treasure,
     muted: save.muted,
+    chapter: save.chapter === 2 && save.chapter2 > 0 ? 2 : 1,
+    selectedChapter: save.chapter === 2 && save.chapter2 > 0 ? 2 : 1,
+    chapter2: save.chapter2,
+    coins: save.coins,
+    weapon: save.weapon,
+    owned: save.owned.slice(),
+    ranks: { ...save.ranks },
+    armoryFrom: 'title',
+    hazards: [],
+    arena: null,
+    arenaLock: false,
     bossIntro: false,
     bossDeathT: 0,
     nextId: 1,
@@ -639,7 +869,7 @@ export function createGame(save: { unlocked: number; highScore: number; treasure
 }
 
 export function loadLevel(g: Game, id: number): void {
-  const built = buildLevel(id)
+  const built = buildLevel(id, g.chapter)
   g.levelId = built.id
   g.levelName = built.name
   g.bossName = built.bossName
@@ -648,10 +878,14 @@ export function loadLevel(g: Game, id: number): void {
   g.enemies = built.enemies
   g.pickups = built.pickups
   g.decals = built.decals
+  g.hazards = built.hazards
+  g.arena = built.arena
+  g.arenaLock = false
   g.bullets = []
   g.particles = []
   g.floaters = []
   g.player = makePlayer(72)
+  applyLoadout(g)
   g.camX = 0
   g.shake = 0
   g.levelTime = 0

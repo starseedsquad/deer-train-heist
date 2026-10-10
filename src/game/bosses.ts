@@ -24,6 +24,9 @@ export function updateBoss(g: Game, e: Enemy, dt: number): void {
   if (e.boss === 'mech') updateMech(g, e, dt)
   else if (e.boss === 'conductor') updateConductor(g, e, dt)
   else if (e.boss === 'turret') updateTurret(g, e, dt)
+  else if (e.boss === 'ram') updateRam(g, e, dt)
+  else if (e.boss === 'hawk') updateHawk(g, e, dt)
+  else if (e.boss === 'summit') updateSummit(g, e, dt)
 
   if (e.hp <= 0) killEnemy(g, e)
 }
@@ -180,6 +183,128 @@ function tossArcs(g: Game, e: Enemy): void {
   g.onSfx?.('shoot')
 }
 
+function updateRam(g: Game, e: Enemy, dt: number): void {
+  e.phaseT += dt
+  if (e.phase === 'chase') {
+    steer(e, g.player.x)
+    e.cooldown -= dt
+    if (e.cooldown <= 0) {
+      e.cooldown = 0.9
+      dropIce(g, g.player.x + (e.cycle % 2 === 0 ? -30 : 40))
+      e.cycle++
+    }
+    if (e.phaseT > 2.1) {
+      e.phase = 'windup'
+      e.phaseT = 0
+      e.vx = 0
+      facePlayer(e, g)
+    }
+  } else if (e.phase === 'windup') {
+    e.vx = 0
+    if (e.phaseT > 0.45) {
+      e.phase = 'charge'
+      e.phaseT = 0
+      e.facing = g.player.x < e.x ? -1 : 1
+    }
+  } else if (e.phase === 'charge') {
+    e.vx = e.facing * 420
+    if (e.phaseT > 0.55) {
+      e.phase = 'slam'
+      e.phaseT = 0
+      slam(g, e, 360)
+    }
+  } else {
+    e.vx = 0
+    if (e.phaseT > 0.7) {
+      e.phase = 'chase'
+      e.phaseT = 0
+    }
+  }
+}
+
+function updateHawk(g: Game, e: Enemy, dt: number): void {
+  e.phaseT += dt
+  e.y = e.baseY + Math.sin(g.levelTime * 2.4) * 36
+  const gust = Math.sin(g.levelTime * 1.4)
+  if (gust > 0.4 && Math.abs(g.player.x - e.x) < 700) g.player.vx -= 220 * dt
+  if (e.phase === 'chase') {
+    steer(e, g.player.x - 80)
+    e.cooldown -= dt
+    if (e.cooldown <= 0) {
+      e.cooldown = 0.7
+      const dx = g.player.x + 16 - (e.x + e.w / 2)
+      const dy = g.player.y + 20 - (e.y + e.h / 2)
+      const len = Math.hypot(dx, dy) || 1
+      fireBullet(g, e.x + e.w / 2, e.y + e.h, (dx / len) * 280, (dy / len) * 280, false, 'any')
+      g.onSfx?.('shoot')
+    }
+    if (e.phaseT > 2.4) {
+      e.phase = 'dive'
+      e.phaseT = 0
+      facePlayer(e, g)
+    }
+  } else if (e.phase === 'dive') {
+    e.vy = 520
+    e.y = Math.min(GROUND - e.h - 8, e.y + e.vy * dt)
+    e.x += e.facing * 180 * dt
+    if (e.phaseT > 0.45 || e.y > GROUND - e.h - 20) {
+      slam(g, e, 280)
+      dropIce(g, e.x)
+      dropIce(g, e.x + 80)
+      e.phase = 'rise'
+      e.phaseT = 0
+    }
+  } else {
+    e.y = Math.max(e.baseY, e.y - 220 * dt)
+    if (e.phaseT > 0.8) {
+      e.phase = 'chase'
+      e.phaseT = 0
+    }
+  }
+}
+
+function updateSummit(g: Game, e: Enemy, dt: number): void {
+  e.phaseT += dt
+  e.vx = 0
+  const angry = e.hp < e.maxHp * 0.5
+  if (e.phase === 'chase') {
+    e.cooldown -= dt
+    if (e.cooldown <= 0) {
+      e.cooldown = angry ? 0.45 : 0.7
+      fireBullet(g, e.x - 8, LOW_SHOT_Y, -380, 0, false, 'low')
+      if (angry) dropIce(g, g.player.x)
+      e.cycle++
+    }
+    if (e.phaseT > (angry ? 1.6 : 2.3)) {
+      e.phase = 'beam'
+      e.phaseT = 0
+      e.beam = false
+    }
+  } else if (e.phase === 'beam') {
+    if (e.phaseT > 0.45) e.beam = true
+    if (e.phaseT > 1.15) {
+      e.beam = false
+      e.phase = 'rain'
+      e.phaseT = 0
+      e.cycle = 0
+    }
+  } else {
+    if (e.phaseT > 0.22 * (e.cycle + 1) && e.cycle < 5) {
+      dropIce(g, e.minX + 40 + e.cycle * 70)
+      e.cycle++
+    }
+    if (e.phaseT > 1.6) {
+      e.phase = 'chase'
+      e.phaseT = 0
+    }
+  }
+}
+
+function dropIce(g: Game, x: number): void {
+  fireBullet(g, x, 70, 40, 80, false, 'any', true, { kind: 'shard', damage: 1, life: 2.4, w: 10, h: 10 })
+  g.onSfx?.('shoot')
+}
+
 function spawnAdd(g: Game, e: Enemy, kind: 'patrol' | 'shooter'): void {
   const x = e.x - 48
   g.enemies.push({
@@ -214,6 +339,7 @@ function spawnAdd(g: Game, e: Enemy, kind: 'patrol' | 'shooter'): void {
     beam: false,
     intro: 0,
     onGround: false,
+    armor: 0,
   })
   burst(g, x, GROUND - 20, '#9eb0c4', 8, 80)
 }

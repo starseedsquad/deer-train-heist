@@ -1,4 +1,4 @@
-export type Mode = 'title' | 'playing' | 'paused' | 'complete' | 'gameover'
+export type Mode = 'title' | 'playing' | 'paused' | 'complete' | 'gameover' | 'armory'
 
 export type SolidKind =
   | 'floor'
@@ -9,9 +9,40 @@ export type SolidKind =
   | 'platform'
   | 'piston'
   | 'gate'
+  | 'cargo'
 
-export type EnemyKind = 'patrol' | 'shooter' | 'drone' | 'boss'
-export type BossId = 'mech' | 'conductor' | 'turret'
+export type EnemyKind = 'patrol' | 'shooter' | 'drone' | 'shield' | 'dasher' | 'grenadier' | 'heavy' | 'sniper' | 'boss'
+export type BossId = 'mech' | 'conductor' | 'turret' | 'ram' | 'hawk' | 'summit'
+export type WeaponId = 'revolver' | 'shotgun' | 'smg' | 'rifle' | 'launcher'
+export type UpgradeId = 'damage' | 'rate' | 'ammo' | 'health' | 'dash' | 'armor'
+export type ChapterId = 1 | 2
+export type BulletKind = 'slug' | 'pellet' | 'rocket' | 'laser' | 'grenade' | 'shard'
+
+export interface Ranks {
+  damage: number
+  rate: number
+  ammo: number
+  health: number
+  dash: number
+  armor: number
+}
+
+export interface Hazard {
+  kind: 'wind' | 'rail' | 'debris'
+  x: number
+  y: number
+  w: number
+  h: number
+  phase: number
+  period: number
+  timer: number
+}
+
+/** Playable boss room. `x + w` is the face of the back bulkhead. */
+export interface Arena {
+  x: number
+  w: number
+}
 export type ShotStyle = 'high' | 'low' | 'mix'
 export type Dodge = 'high' | 'low' | 'any'
 
@@ -74,6 +105,7 @@ export interface Enemy {
   beam: boolean
   intro: number
   onGround: boolean
+  armor: number
 }
 
 export interface Bullet {
@@ -88,6 +120,10 @@ export interface Bullet {
   damage: number
   dodge: Dodge
   gravity: boolean
+  kind: BulletKind
+  pierce: number
+  blast: number
+  metal: number
 }
 
 export interface Pickup {
@@ -166,6 +202,9 @@ export interface Player {
   checkpointX: number
   checkpointY: number
   trail: Trail[]
+  charge: number
+  maxHp: number
+  armorClock: number
 }
 
 export interface Stats {
@@ -196,6 +235,8 @@ export interface InputState {
   click: boolean
   clickX: number
   clickY: number
+  weaponSlot: number
+  wheel: number
 }
 
 export interface Game {
@@ -228,6 +269,17 @@ export interface Game {
   highScore: number
   lifetimeTreasure: number
   muted: boolean
+  chapter: ChapterId
+  selectedChapter: ChapterId
+  chapter2: number
+  coins: number
+  weapon: WeaponId
+  owned: WeaponId[]
+  ranks: Ranks
+  armoryFrom: 'title' | 'next'
+  hazards: Hazard[]
+  arena: Arena | null
+  arenaLock: boolean
   bossIntro: boolean
   bossDeathT: number
   nextId: number
@@ -256,7 +308,13 @@ export function emptyInput(): InputState {
     click: false,
     clickX: 0,
     clickY: 0,
+    weaponSlot: 0,
+    wheel: 0,
   }
+}
+
+export function emptyRanks(): Ranks {
+  return { damage: 0, rate: 0, ammo: 0, health: 0, dash: 0, armor: 0 }
 }
 
 export function emptyStats(): Stats {

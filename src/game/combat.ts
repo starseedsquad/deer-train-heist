@@ -11,7 +11,7 @@ import {
   SCORE_METAL,
   SCORE_ROBOT,
 } from './constants'
-import type { BossId, Bullet, Dodge, Enemy, Game, ShotStyle } from './types'
+import type { BossId, Bullet, BulletKind, Dodge, Enemy, Game, ShotStyle } from './types'
 
 export function burst(g: Game, x: number, y: number, color: string, n: number, speed = 90): void {
   for (let i = 0; i < n; i++) {
@@ -44,6 +44,17 @@ export function gunOrigin(p: { x: number; y: number; w: number; facing: 1 | -1 }
   }
 }
 
+export interface ShotOpts {
+  damage?: number
+  kind?: BulletKind
+  pierce?: number
+  blast?: number
+  metal?: number
+  life?: number
+  w?: number
+  h?: number
+}
+
 export function fireBullet(
   g: Game,
   x: number,
@@ -53,22 +64,36 @@ export function fireBullet(
   friendly: boolean,
   dodge: Dodge,
   gravity = false,
+  opts: ShotOpts = {},
 ): void {
   const b: Bullet = {
     x,
     y,
-    w: dodge === 'low' ? 16 : BULLET_W,
-    h: BULLET_H,
+    w: opts.w ?? (dodge === 'low' ? 16 : BULLET_W),
+    h: opts.h ?? BULLET_H,
     vx,
     vy,
-    life: gravity ? 3.2 : 2.4,
+    life: opts.life ?? (gravity ? 3.2 : 2.4),
     friendly,
-    damage: 1,
+    damage: opts.damage ?? 1,
     dodge,
     gravity,
+    kind: opts.kind ?? 'slug',
+    pierce: opts.pierce ?? 0,
+    blast: opts.blast ?? 0,
+    metal: opts.metal ?? 0,
   }
   g.bullets.push(b)
-  if (g.bullets.length > 80) g.bullets.splice(0, g.bullets.length - 80)
+  if (g.bullets.length > 120) g.bullets.splice(0, g.bullets.length - 120)
+}
+
+/** Front plate blocks high shots. Crouch shots and rounds from behind go through. */
+export function shieldVerdict(e: Enemy, b: Bullet): 'block' | 'hit' {
+  if (e.kind !== 'shield') return 'hit'
+  const fromBehind = e.facing === 1 ? b.vx > 0 : b.vx < 0
+  if (fromBehind) return 'hit'
+  if (b.y >= e.y + 30) return 'hit'
+  return 'block'
 }
 
 export function shotY(style: ShotStyle, cycle: number): { y: number; dodge: Dodge } {
@@ -80,6 +105,16 @@ export function hurtPlayer(g: Game, amount = 1, ignoreFrames = false): void {
   const p = g.player
   if (!p.alive || p.deadT > 0) return
   if (!ignoreFrames && p.hurtT > 0) return
+  if (g.ranks.armor > 0) {
+    p.armorClock += 1
+    const every = 5 - g.ranks.armor
+    if (p.armorClock % every === 0) {
+      floatText(g, p.x, p.y, 'ARMOR', '#9ad0ff')
+      p.hurtT = 0.35
+      g.onSfx?.('metal')
+      return
+    }
+  }
   p.hp = Math.max(0, p.hp - amount)
   p.hurtT = HURT_TIME
   g.shake = Math.max(g.shake, 8)
@@ -143,14 +178,54 @@ export function killEnemy(g: Game, e: Enemy): void {
   }
 }
 
+export function damageSolidHit(g: Game, id: number, amount: number, metalBonus = 0): void {
+  const s = g.solids.find((o) => o.id === id)
+  const extra = s && (s.kind === 'metal' || s.kind === 'barrier') ? metalBonus : 0
+  damageSolid(g, id, amount + extra)
+}
+
+export function explode(g: Game, x: number, y: number, radius: number, damage: number, friendly: boolean, metalBonus = 0): void {
+  burst(g, x, y, friendly ? '#ffb15a' : '#ff7a4a', 16, 160)
+  g.shake = Math.max(g.shake, 6)
+  for (const e of g.enemies) {
+    if (!e.alive) continue
+    const cx = e.x + e.w / 2
+    const cy = e.y + e.h / 2
+    if (Math.hypot(cx - x, cy - y) > radius + e.w * 0.3) continue
+    e.hp -= damage
+    e.hurtT = 0.08
+    if (e.hp <= 0) killEnemy(g, e)
+  }
+  for (const s of g.solids) {
+    if (!s.destructible || s.hp <= 0) continue
+    const cx = s.x + s.w / 2
+    const cy = s.y + s.h / 2
+    if (Math.hypot(cx - x, cy - y) > radius) continue
+    damageSolidHit(g, s.id, damage, metalBonus)
+  }
+  if (!friendly) {
+    const p = g.player
+    const cx = p.x + p.w / 2
+    const cy = p.y + p.h / 2
+    if (Math.hypot(cx - x, cy - y) < radius) hurtPlayer(g, 1)
+  }
+  g.onSfx?.('break')
+}
+
 export function bossLabel(id: BossId): string {
   if (id === 'mech') return 'IRON WARDEN'
   if (id === 'conductor') return 'THE CONDUCTOR'
-  return 'LOCO-LOCK'
+  if (id === 'turret') return 'LOCO-LOCK'
+  if (id === 'ram') return 'GLACIER RAM'
+  if (id === 'hawk') return 'WHITEOUT HAWK'
+  return 'SUMMIT BREAKER'
 }
 
 export function bossSize(id: BossId): { w: number; h: number; hp: number } {
   if (id === 'mech') return { w: 118, h: 132, hp: 36 }
   if (id === 'conductor') return { w: 74, h: 112, hp: 42 }
-  return { w: 168, h: 158, hp: 48 }
+  if (id === 'turret') return { w: 168, h: 158, hp: 48 }
+  if (id === 'ram') return { w: 128, h: 118, hp: 40 }
+  if (id === 'hawk') return { w: 100, h: 56, hp: 44 }
+  return { w: 150, h: 146, hp: 54 }
 }
