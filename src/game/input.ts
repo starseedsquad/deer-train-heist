@@ -1,6 +1,7 @@
 import { VIEW_H, VIEW_W } from './constants'
-import type { InputState } from './types'
+import type { Game, InputState } from './types'
 import { emptyInput } from './types'
+import { hitButton, layoutButtons } from './ui'
 
 const HOLD = ['left', 'right', 'jump', 'crouch', 'shoot', 'dash', 'reload', 'pause', 'confirm', 'mute'] as const
 type Hold = (typeof HOLD)[number]
@@ -50,8 +51,11 @@ export class Input {
   private click = false
   private clickX = 0
   private clickY = 0
+  private mouseDown = false
+  private mouseEdge = false
+  private mouseId: number | null = null
 
-  constructor(canvas: HTMLCanvasElement) {
+  constructor(canvas: HTMLCanvasElement, game: Game) {
     window.addEventListener('keydown', (event) => {
       if (event.repeat) return
       const actions = actionsFor(event.code)
@@ -65,13 +69,40 @@ export class Input {
     window.addEventListener('keyup', (event) => {
       for (const action of actionsFor(event.code)) this.down.delete(action)
     })
-    window.addEventListener('blur', () => this.down.clear())
+    window.addEventListener('blur', () => {
+      this.down.clear()
+      this.mouseDown = false
+      this.mouseId = null
+    })
+    const endMouse = (event: PointerEvent) => {
+      if (this.mouseId !== event.pointerId) return
+      this.mouseDown = false
+      this.mouseId = null
+    }
+    window.addEventListener('pointerup', endMouse)
+    window.addEventListener('pointercancel', endMouse)
+    canvas.addEventListener('contextmenu', (event) => event.preventDefault())
+    canvas.addEventListener('selectstart', (event) => event.preventDefault())
+    canvas.addEventListener('dragstart', (event) => event.preventDefault())
     canvas.addEventListener('pointerdown', (event) => {
       if ((event.target as HTMLElement).closest('#touch')) return
+      event.preventDefault()
+      if (event.button !== 0) return
       const point = this.local(canvas, event)
       this.click = true
       this.clickX = point.x
       this.clickY = point.y
+      const onButton = hitButton(layoutButtons(game), point.x, point.y) !== null
+      if (event.pointerType === 'mouse' && event.button === 0 && !onButton) {
+        this.mouseDown = true
+        this.mouseEdge = true
+        this.mouseId = event.pointerId
+        try {
+          canvas.setPointerCapture(event.pointerId)
+        } catch {
+          /* pointer already released */
+        }
+      }
     })
     document.querySelectorAll<HTMLElement>('[data-hold]').forEach((el) => {
       const action = el.dataset.hold
@@ -98,11 +129,12 @@ export class Input {
     input.right = this.down.has('right')
     input.jump = this.down.has('jump')
     input.crouch = this.down.has('crouch')
-    input.shoot = this.down.has('shoot')
+    input.shoot = this.down.has('shoot') || this.mouseDown
     input.reload = this.down.has('reload')
     input.jumpPressed = this.pressed.has('jump')
     input.dashPressed = this.pressed.has('dash')
-    input.shootPressed = this.pressed.has('shoot')
+    input.shootPressed = this.pressed.has('shoot') || this.mouseEdge
+    this.mouseEdge = false
     input.pausePressed = this.pressed.has('pause')
     input.confirmPressed = this.pressed.has('confirm')
     input.mutePressed = this.pressed.has('mute')

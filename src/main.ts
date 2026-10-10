@@ -25,7 +25,7 @@ if (game.debug) (globalThis as { __antler?: typeof game }).__antler = game
 if (params.has('touch')) document.querySelector('#touch')?.classList.add('force')
 
 const audio = new AudioBus()
-const input = new Input(canvas)
+const input = new Input(canvas, game)
 game.onSfx = (name) => {
   audio.muted = game.muted
   audio.unlock()

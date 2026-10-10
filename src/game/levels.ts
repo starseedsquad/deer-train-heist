@@ -296,7 +296,7 @@ function intro(b: Builder): void {
   const w = 640
   b.floor(x, w)
   b.sign(x + 70, 'ARROWS MOVE')
-  b.sign(x + 250, 'J / X SHOOTS')
+  b.sign(x + 250, 'CLICK OR J/X SHOOTS')
   b.crate(x + 430, 0, 1)
   b.gem(x + 520)
   b.cursor = x + w
